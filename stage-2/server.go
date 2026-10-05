@@ -16,6 +16,11 @@ type Server struct {
 func NewServer() *Server {
 	srv := &Server{store: &Store{state: emptyState()}, mux: http.NewServeMux()}
 	srv.mux.HandleFunc("GET /health", srv.health)
+	for _, page := range []string{"/{$}", "/split", "/login", "/signup"} {
+		srv.mux.HandleFunc("GET "+page, servePage)
+	}
+	srv.mux.HandleFunc("GET /app.js", serveScript)
+	srv.mux.Handle("GET /static/", staticHandler())
 	srv.mux.HandleFunc("POST /_test/reset", srv.reset)
 	srv.mux.HandleFunc("GET /_test/export", srv.export)
 	srv.mux.HandleFunc("POST /_test/import", srv.importState)
@@ -23,13 +28,17 @@ func NewServer() *Server {
 	srv.mux.HandleFunc("POST /auth/login", srv.login)
 	srv.mux.HandleFunc("GET /me", srv.authenticated(srv.me))
 	srv.mux.HandleFunc("GET /activity", srv.authenticated(srv.activity))
-	srv.mux.HandleFunc("GET /requests", srv.authenticated(srv.listRequests))
+	srv.mux.HandleFunc("GET /requests", pageOrAPI(srv.authenticated(srv.listRequests)))
 	srv.mux.HandleFunc("POST /requests/{id}/decline", srv.authenticated(srv.declineRequest))
 	srv.mux.HandleFunc("POST /requests/{id}/cancel", srv.authenticated(srv.cancelRequest))
 	srv.mux.HandleFunc("POST /payments", srv.idempotent(srv.createPayment, idempotentOptions{}))
 	srv.mux.HandleFunc("POST /requests", srv.idempotent(srv.createRequest, idempotentOptions{}))
 	srv.mux.HandleFunc("POST /requests/{id}/pay", srv.idempotent(srv.payRequest, idempotentOptions{allowEmptyBody: true}))
 	srv.mux.HandleFunc("POST /splits", srv.idempotent(srv.createSplit, idempotentOptions{}))
+	srv.mux.HandleFunc("GET /authorizations", pageOrAPI(srv.authenticated(srv.listAuthorizations)))
+	srv.mux.HandleFunc("POST /authorizations", srv.idempotent(srv.createAuthorization, idempotentOptions{}))
+	srv.mux.HandleFunc("POST /authorizations/{id}/capture", srv.idempotent(srv.captureAuthorization, idempotentOptions{allowEmptyBody: true}))
+	srv.mux.HandleFunc("POST /authorizations/{id}/void", srv.authenticated(srv.voidAuthorization))
 	srv.mux.HandleFunc("POST /settlements", srv.idempotent(srv.createSettlement, idempotentOptions{operatorOnly: true}))
 	return srv
 }

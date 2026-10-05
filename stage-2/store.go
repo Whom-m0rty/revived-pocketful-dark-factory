@@ -16,20 +16,24 @@ type Store struct {
 
 // State is the complete service state; it is also the export format.
 type State struct {
-	Currency    string               `json:"currency"`
-	MinorUnits  int                  `json:"minor_units"`
-	Users       []*User              `json:"users"`
-	Tokens      map[string]string    `json:"tokens"`
-	Payments    []*Payment           `json:"payments"`
-	Requests    []*Request           `json:"requests"`
-	Operators   []string             `json:"settlement_operator_ids"`
-	Idempotency []*IdempotencyRecord `json:"idempotency"`
-	Seq         int64                `json:"seq"`
+	Currency   string            `json:"currency"`
+	MinorUnits int               `json:"minor_units"`
+	Users      []*User           `json:"users"`
+	Tokens     map[string]string `json:"tokens"`
+	Payments   []*Payment        `json:"payments"`
+	Requests   []*Request        `json:"requests"`
+	// Authorizations and AuthorizationTTL are absent from stage-1 exports.
+	Authorizations   []*Authorization     `json:"authorizations"`
+	AuthorizationTTL int64                `json:"authorization_ttl_seconds"`
+	Operators        []string             `json:"settlement_operator_ids"`
+	Idempotency      []*IdempotencyRecord `json:"idempotency"`
+	Seq              int64                `json:"seq"`
 
 	usersByID     map[string]*User
 	usersByHandle map[string]*User
 	usersByEmail  map[string]*User
 	requestsByID  map[string]*Request
+	authsByID     map[string]*Authorization
 	paymentIDs    map[string]bool
 	operators     map[string]bool
 	idempotency   map[string]*IdempotencyRecord
@@ -63,6 +67,7 @@ func (s *State) buildIndexes() error {
 	s.usersByEmail = map[string]*User{}
 	s.requestsByID = map[string]*Request{}
 	s.paymentIDs = map[string]bool{}
+	s.authsByID = map[string]*Authorization{}
 	s.operators = map[string]bool{}
 	s.idempotency = map[string]*IdempotencyRecord{}
 
@@ -112,6 +117,35 @@ func (s *State) buildIndexes() error {
 		}
 		s.requestsByID[r.ID] = r
 	}
+	if s.AuthorizationTTL == 0 {
+		s.AuthorizationTTL = defaultAuthorizationTTL
+	}
+	if s.AuthorizationTTL < 0 {
+		return errors.New("authorization_ttl_seconds must be positive")
+	}
+	for _, a := range s.Authorizations {
+		if a == nil || a.ID == "" || len(a.ID) > maxIDLength || s.authsByID[a.ID] != nil {
+			return errors.New("invalid authorization id")
+		}
+		if s.usersByID[a.FromUserID] == nil || s.usersByID[a.ToUserID] == nil {
+			return errors.New("authorization references unknown user")
+		}
+		if !validAuthorizationStatus(a.Status) || a.Amount < 1 || a.CapturedAmount < 0 || a.CapturedAmount > a.Amount {
+			return errors.New("invalid authorization amounts or status")
+		}
+		expires, err := time.Parse(time.RFC3339, a.ExpiresAt)
+		if err != nil {
+			return errors.New("invalid authorization expires_at")
+		}
+		a.expires = expires
+		s.authsByID[a.ID] = a
+	}
+	now := time.Now()
+	for _, u := range s.Users {
+		if s.heldBy(u.ID, now) > u.Balance {
+			return errors.New("open holds exceed the balance of " + u.ID)
+		}
+	}
 	for _, id := range s.Operators {
 		s.operators[id] = true
 	}
@@ -122,6 +156,22 @@ func (s *State) buildIndexes() error {
 		s.idempotency[rec.scope()] = rec
 	}
 	return nil
+}
+
+// heldBy is the sum of the user's open holds.
+func (s *State) heldBy(userID string, now time.Time) int64 {
+	var held int64
+	for _, a := range s.Authorizations {
+		if a.FromUserID == userID {
+			held += a.heldAt(now)
+		}
+	}
+	return held
+}
+
+// available is what the user can spend: total minus open holds.
+func (s *State) available(u *User, now time.Time) int64 {
+	return u.Balance - s.heldBy(u.ID, now)
 }
 
 func (s *State) nextSeq() int64 {
@@ -162,23 +212,54 @@ func (s *State) newRequestID() string {
 
 // transfer moves money between two wallets and records the payment.
 // The caller must already have checked that the sender can afford it.
-func (s *State) transfer(from, to *User, amount int64, note, visibility string, requestID *string, at time.Time) *Payment {
+func (s *State) transfer(from, to *User, amount int64, note, visibility string, link paymentLink, at time.Time) *Payment {
 	from.Balance -= amount
 	to.Balance += amount
-	return s.recordPayment(from, to, amount, note, visibility, requestID, nil, at)
+	return s.recordPayment(from, to, amount, note, visibility, link, at)
+}
+
+// paymentLink names the request, settlement or authorization a payment belongs to, if any.
+type paymentLink struct {
+	requestID, settlementID, authorizationID *string
 }
 
 // recordPayment appends a payment record without touching balances.
-func (s *State) recordPayment(from, to *User, amount int64, note, visibility string, requestID, settlementID *string, at time.Time) *Payment {
+func (s *State) recordPayment(from, to *User, amount int64, note, visibility string, link paymentLink, at time.Time) *Payment {
 	p := &Payment{
 		ID: s.newPaymentID(), Seq: s.nextSeq(),
 		FromUserID: from.ID, FromHandle: from.Handle, ToUserID: to.ID, ToHandle: to.Handle,
 		Amount: amount, Note: note, Visibility: visibility,
-		RequestID: requestID, SettlementID: settlementID, CreatedAt: formatTime(at),
+		RequestID: link.requestID, SettlementID: link.settlementID, AuthorizationID: link.authorizationID,
+		CreatedAt: formatTime(at),
 	}
 	s.Payments = append(s.Payments, p)
 	s.paymentIDs[p.ID] = true
 	return p
+}
+
+func (s *State) newAuthorizationID() string {
+	for {
+		id := newID("auth_")
+		if s.authsByID[id] == nil {
+			return id
+		}
+	}
+}
+
+func (s *State) createAuthorization(from, to *User, amount int64, note, visibility string, at time.Time) *Authorization {
+	// Millisecond precision, so the deadline read back from expires_at is the one enforced.
+	at = at.Truncate(time.Millisecond)
+	expires := at.Add(time.Duration(s.AuthorizationTTL) * time.Second)
+	a := &Authorization{
+		ID: s.newAuthorizationID(), Seq: s.nextSeq(),
+		FromUserID: from.ID, FromHandle: from.Handle, ToUserID: to.ID, ToHandle: to.Handle,
+		Amount: amount, Note: note, Visibility: visibility, Status: authOpen,
+		ExpiresAt: formatPreciseTime(expires), PaymentIDs: []string{}, CreatedAt: formatPreciseTime(at),
+		expires: expires,
+	}
+	s.Authorizations = append(s.Authorizations, a)
+	s.authsByID[a.ID] = a
+	return a
 }
 
 func (s *State) createRequest(requester, payer *User, amount int64, note string, at time.Time) *Request {

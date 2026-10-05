@@ -6,9 +6,11 @@ import (
 )
 
 func (srv *Server) me(w http.ResponseWriter, r *http.Request, st *State, user *User) {
+	held := st.heldBy(user.ID, time.Now())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id": user.ID, "display_name": user.DisplayName, "handle": user.Handle,
-		"balance": user.Balance, "currency": st.Currency, "minor_units": st.MinorUnits,
+		"balance": user.Balance, "total": user.Balance, "available": user.Balance - held, "held": held,
+		"currency": st.Currency, "minor_units": st.MinorUnits,
 	})
 }
 
@@ -51,10 +53,10 @@ func (srv *Server) createPayment(r *http.Request, st *State, user *User, body ma
 	if to.ID == user.ID {
 		return nil, &apiError{422, "self_payment", "you cannot pay yourself"}
 	}
-	if user.Balance < amount {
+	if st.available(user, now) < amount {
 		return nil, errInsufficientFunds()
 	}
-	return st.transfer(user, to, amount, note, visibility, nil, now).view(st.Currency), nil
+	return st.transfer(user, to, amount, note, visibility, paymentLink{}, now).view(st.Currency), nil
 }
 
 func (srv *Server) createRequest(r *http.Request, st *State, user *User, body map[string]any, now time.Time) (any, *apiError) {
@@ -98,11 +100,11 @@ func (srv *Server) payRequest(r *http.Request, st *State, user *User, body map[s
 	if req.Status != statusPending {
 		return nil, errNotPending()
 	}
-	if user.Balance < req.Amount {
+	if st.available(user, now) < req.Amount {
 		return nil, errInsufficientFunds()
 	}
 	requestID := req.ID
-	payment := st.transfer(user, st.usersByID[req.RequesterID], req.Amount, req.Note, visibility, &requestID, now)
+	payment := st.transfer(user, st.usersByID[req.RequesterID], req.Amount, req.Note, visibility, paymentLink{requestID: &requestID}, now)
 	req.Status = statusPaid
 	req.PaymentID = &payment.ID
 	return payment.view(st.Currency), nil
@@ -156,30 +158,16 @@ func (srv *Server) listRequests(w http.ResponseWriter, r *http.Request, st *Stat
 		writeError(w, apiErr)
 		return
 	}
-	query := r.URL.Query()
-	direction, hasDirection := query["direction"]
-	if hasDirection && direction[0] != "incoming" && direction[0] != "outgoing" {
-		writeError(w, errValidation("direction must be incoming or outgoing"))
-		return
-	}
-	status, hasStatus := query["status"]
-	if hasStatus && !validRequestStatus(status[0]) {
-		writeError(w, errValidation("status must be pending, paid, declined or cancelled"))
+	filter, apiErr := parseListFilter(r, validRequestStatus)
+	if apiErr != nil {
+		writeError(w, apiErr)
 		return
 	}
 
 	matches := []requestView{}
 	for i := len(st.Requests) - 1; i >= 0; i-- {
 		req := st.Requests[i]
-		isPayer, isRequester := req.PayerID == user.ID, req.RequesterID == user.ID
-		switch {
-		case !isPayer && !isRequester:
-			continue
-		case hasDirection && direction[0] == "incoming" && !isPayer:
-			continue
-		case hasDirection && direction[0] == "outgoing" && !isRequester:
-			continue
-		case hasStatus && req.Status != status[0]:
+		if !filter.matches(req.PayerID == user.ID, req.RequesterID == user.ID, req.Status) {
 			continue
 		}
 		matches = append(matches, req.view(st.Currency))
@@ -351,7 +339,7 @@ func (srv *Server) createSettlement(r *http.Request, st *State, user *User, body
 		net[t.to] += t.amount
 	}
 	for u, delta := range net {
-		if u.Balance+delta < 0 {
+		if st.available(u, now)+delta < 0 {
 			return nil, errInsufficientFunds()
 		}
 	}
@@ -362,7 +350,7 @@ func (srv *Server) createSettlement(r *http.Request, st *State, user *User, body
 	settlementID := newID("stl_")
 	payments := make([]paymentView, len(transfers))
 	for i, t := range transfers {
-		payments[i] = st.recordPayment(t.from, t.to, t.amount, t.note, t.visibility, nil, &settlementID, now).view(st.Currency)
+		payments[i] = st.recordPayment(t.from, t.to, t.amount, t.note, t.visibility, paymentLink{settlementID: &settlementID}, now).view(st.Currency)
 	}
 	return map[string]any{"settlement_id": settlementID, "committed_at": formatTime(now), "payments": payments}, nil
 }

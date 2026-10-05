@@ -16,6 +16,9 @@ type fixture struct {
 	Payments   []fixturePayment `json:"payments"`
 	Requests   []fixtureRequest `json:"requests"`
 	Operators  []string         `json:"settlement_operator_ids"`
+
+	AuthorizationTTL *json.Number           `json:"authorization_ttl_seconds"`
+	Authorizations   []fixtureAuthorization `json:"authorizations"`
 }
 
 type fixtureUser struct {
@@ -43,6 +46,17 @@ type fixtureRequest struct {
 	Amount      json.Number `json:"amount"`
 	Note        string      `json:"note"`
 	Status      string      `json:"status"`
+}
+
+type fixtureAuthorization struct {
+	ID         string      `json:"id"`
+	FromUserID string      `json:"from_user_id"`
+	ToUserID   string      `json:"to_user_id"`
+	Amount     json.Number `json:"amount"`
+	Note       string      `json:"note"`
+	Visibility *string     `json:"visibility"`
+	Status     string      `json:"status"`
+	ExpiresAt  string      `json:"expires_at"`
 }
 
 // stateFromFixture builds a fresh state. Seeded balances are taken as already net
@@ -83,10 +97,7 @@ func stateFromFixture(f *fixture) (*State, *apiError) {
 		if !ok {
 			return nil, errValidation("payment amounts must be integers")
 		}
-		visibility := "public"
-		if p.Visibility != nil {
-			visibility = *p.Visibility
-		}
+		visibility := defaultVisibility(p.Visibility)
 		seq := st.nextSeq()
 		st.Payments = append(st.Payments, &Payment{ID: p.ID, Seq: seq, FromUserID: p.FromUserID, ToUserID: p.ToUserID,
 			Amount: amount, Note: p.Note, Visibility: visibility, CreatedAt: formatTime(seededAt.Add(time.Duration(seq) * time.Second))})
@@ -101,6 +112,25 @@ func stateFromFixture(f *fixture) (*State, *apiError) {
 			Amount: amount, Note: rq.Note, Status: rq.Status, CreatedAt: formatTime(seededAt.Add(time.Duration(seq) * time.Second))})
 	}
 
+	st.AuthorizationTTL = defaultAuthorizationTTL
+	if f.AuthorizationTTL != nil {
+		ttl, ok := integralValue(*f.AuthorizationTTL)
+		if !ok || ttl < 1 {
+			return nil, errValidation("authorization_ttl_seconds must be a positive integer")
+		}
+		st.AuthorizationTTL = ttl
+	}
+	for _, a := range f.Authorizations {
+		amount, ok := integralValue(a.Amount)
+		if !ok {
+			return nil, errValidation("authorization amounts must be integers")
+		}
+		seq := st.nextSeq()
+		st.Authorizations = append(st.Authorizations, &Authorization{ID: a.ID, Seq: seq, FromUserID: a.FromUserID, ToUserID: a.ToUserID,
+			Amount: amount, Note: a.Note, Visibility: defaultVisibility(a.Visibility), Status: a.Status, ExpiresAt: a.ExpiresAt,
+			PaymentIDs: []string{}, CreatedAt: formatTime(seededAt.Add(time.Duration(seq) * time.Second))})
+	}
+
 	if err := st.buildIndexes(); err != nil {
 		return nil, errValidation("invalid fixture: " + err.Error())
 	}
@@ -108,11 +138,22 @@ func stateFromFixture(f *fixture) (*State, *apiError) {
 		p.FromHandle = st.usersByID[p.FromUserID].Handle
 		p.ToHandle = st.usersByID[p.ToUserID].Handle
 	}
+	for _, a := range st.Authorizations {
+		a.FromHandle = st.usersByID[a.FromUserID].Handle
+		a.ToHandle = st.usersByID[a.ToUserID].Handle
+	}
 	for _, rq := range st.Requests {
 		rq.RequesterHandle = st.usersByID[rq.RequesterID].Handle
 		rq.PayerHandle = st.usersByID[rq.PayerID].Handle
 	}
 	return st, nil
+}
+
+func defaultVisibility(v *string) string {
+	if v == nil {
+		return "public"
+	}
+	return *v
 }
 
 // decodeInto parses a body as a JSON object and decodes it strictly into v.

@@ -272,3 +272,40 @@ func paginate[T any](items []T, limit, offset int64) ([]T, bool) {
 	}
 	return items[offset:end], true
 }
+
+// listFilter holds the optional direction and status query parameters of a list endpoint.
+type listFilter struct {
+	direction string // "", "incoming" or "outgoing"
+	status    string // "" for any
+}
+
+func parseListFilter(r *http.Request, validStatus func(string) bool) (listFilter, *apiError) {
+	var f listFilter
+	query := r.URL.Query()
+	if values, present := query["direction"]; present {
+		f.direction = values[0]
+		if f.direction != "incoming" && f.direction != "outgoing" {
+			return f, errValidation("direction must be incoming or outgoing")
+		}
+	}
+	if values, present := query["status"]; present {
+		f.status = values[0]
+		if !validStatus(f.status) {
+			return f, errValidation("status is not a known status")
+		}
+	}
+	return f, nil
+}
+
+// matches reports whether an item passes the filter, given which side of it the caller is on.
+func (f listFilter) matches(isIncoming, isOutgoing bool, status string) bool {
+	switch {
+	case !isIncoming && !isOutgoing:
+		return false
+	case f.direction == "incoming" && !isIncoming:
+		return false
+	case f.direction == "outgoing" && !isOutgoing:
+		return false
+	}
+	return f.status == "" || f.status == status
+}
