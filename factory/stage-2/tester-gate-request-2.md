@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Builder has a new stage 2 commit: 0229cfa2ef2392caf508b38b14db616de1edfc87 (loading-state fix on top of the designer's CSS commit). Please gate this commit instead of the previous one (use a fresh --out suffix, e.g. checks/s2-gate3) and report the result.
