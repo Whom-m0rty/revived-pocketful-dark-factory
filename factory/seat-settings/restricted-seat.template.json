@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(/__HOLDOUT_GLOB__)",
+      "Edit(/__HOLDOUT_GLOB__)",
+      "Bash(*holdout*)"
+    ]
+  }
+}

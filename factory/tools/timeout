@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Portable `timeout SECONDS COMMAND...` for machines without coreutils. Exit 124 on timeout."""
+import subprocess
+import sys
+
+if len(sys.argv) < 3:
+    sys.exit("usage: timeout SECONDS COMMAND [ARGS...]")
+seconds = float(sys.argv[1].rstrip("s"))
+process = subprocess.Popen(sys.argv[2:])
+try:
+    sys.exit(process.wait(timeout=seconds))
+except subprocess.TimeoutExpired:
+    process.kill()
+    process.wait()
+    sys.exit(124)
