@@ -1,0 +1,6864 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pocketful stage 3 contract (shape only)",
+  "stage": 3,
+  "track": "pocketful",
+  "conventions": {
+    "content_type": "application/json; charset=utf-8",
+    "error_body": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "error_example": {
+      "error": {
+        "code": "insufficient_funds",
+        "message": "human readable, any wording"
+      }
+    },
+    "notes": "Every 4xx/5xx carries error_body. Unknown request fields and query params are ignored. IDs are opaque strings <=64 chars. Timestamps RFC 3339 with explicit offset. 'example' values are copied from the spec where it gives one. Stage 2: every payment carries authorization_id (null unless created by a capture). Seven idempotent write paths: stage 1's five plus POST /authorizations and POST /authorizations/{id}/capture. Stage 3: payments have revision histories; created_at is the original effective/recorded instant. POST /payments/{payment_id}/corrections also requires an Idempotency-Key."
+  },
+  "operations": {
+    "GET /health": {
+      "request": {
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "const": "ok"
+              }
+            }
+          },
+          "example": {
+            "status": "ok"
+          }
+        }
+      }
+    },
+    "POST /_test/reset": {
+      "request": {
+        "body": {
+          "type": "object",
+          "required": [
+            "currency",
+            "minor_units",
+            "users"
+          ],
+          "properties": {
+            "currency": {
+              "type": "string"
+            },
+            "minor_units": {
+              "enum": [
+                0,
+                2,
+                3
+              ]
+            },
+            "users": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "email",
+                  "password",
+                  "display_name",
+                  "handle",
+                  "balance"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "handle": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_]{1,20}$"
+                  },
+                  "balance": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "payments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "from_user_id",
+                  "to_user_id",
+                  "amount",
+                  "note",
+                  "visibility"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "from_user_id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "to_user_id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "visibility": {
+                    "enum": [
+                      "public",
+                      "private"
+                    ]
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "optional; defaults to reset time; future is 422"
+                  }
+                }
+              }
+            },
+            "requests": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "requester_id",
+                  "payer_id",
+                  "amount",
+                  "note",
+                  "status"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "requester_id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "payer_id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "paid",
+                      "declined",
+                      "cancelled"
+                    ]
+                  }
+                }
+              }
+            },
+            "settlement_operator_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "default": []
+            },
+            "authorization_ttl_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 600
+            },
+            "authorizations": {
+              "type": "array",
+              "default": [],
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "from_user_id",
+                  "to_user_id",
+                  "amount",
+                  "note",
+                  "visibility",
+                  "status",
+                  "expires_at"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "from_user_id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "to_user_id": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "visibility": {
+                    "enum": [
+                      "public",
+                      "private"
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "open",
+                      "captured",
+                      "voided",
+                      "expired"
+                    ]
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "RFC 3339 with explicit offset"
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "optional; seeded open holds default to reset time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "example": {
+          "currency": "EUR",
+          "minor_units": 2,
+          "authorization_ttl_seconds": 600,
+          "users": [
+            {
+              "id": "u_ada",
+              "handle": "ada",
+              "balance": 10000,
+              "...": "..."
+            }
+          ],
+          "authorizations": [
+            {
+              "id": "a_1",
+              "from_user_id": "u_ada",
+              "to_user_id": "u_bob",
+              "amount": 2000,
+              "note": "deposit",
+              "visibility": "public",
+              "status": "open",
+              "expires_at": "2026-09-24T13:20:00+00:00"
+            }
+          ]
+        }
+      },
+      "responses": {
+        "204": {
+          "status": 204,
+          "schema": {
+            "type": "null",
+            "description": "no body"
+          },
+          "example": null
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          },
+          "description": "negative seeded balance, or seeded unexpired open holds above a user's balance; state unchanged; or a seeded payment created_at in the future"
+        }
+      }
+    },
+    "GET /_test/export": {
+      "request": {
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "track",
+              "format_version",
+              "state"
+            ],
+            "properties": {
+              "track": {
+                "const": "pocketful"
+              },
+              "format_version": {
+                "const": 1
+              },
+              "state": {
+                "type": "object",
+                "description": "implementation-defined, opaque"
+              }
+            }
+          },
+          "example": {
+            "track": "pocketful",
+            "format_version": 1,
+            "state": {}
+          }
+        }
+      }
+    },
+    "POST /_test/import": {
+      "request": {
+        "body": {
+          "type": "object",
+          "required": [
+            "track",
+            "format_version",
+            "state"
+          ],
+          "properties": {
+            "track": {
+              "const": "pocketful"
+            },
+            "format_version": {
+              "const": 1
+            },
+            "state": {
+              "type": "object",
+              "description": "implementation-defined, opaque"
+            }
+          }
+        },
+        "example": {
+          "track": "pocketful",
+          "format_version": 1,
+          "state": {}
+        }
+      },
+      "responses": {
+        "204": {
+          "status": 204,
+          "schema": {
+            "type": "null",
+            "description": "no body"
+          },
+          "example": null
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          },
+          "description": "missing fields, wrong track/version, invalid state; destination unchanged"
+        }
+      },
+      "description": "must accept unchanged exports from the same team's stage-1 or stage-2 service"
+    },
+    "POST /auth/signup": {
+      "request": {
+        "body": {
+          "type": "object",
+          "required": [
+            "email",
+            "password",
+            "display_name"
+          ],
+          "properties": {
+            "email": {
+              "type": "string",
+              "pattern": "^[^@]+@[^@]+$"
+            },
+            "password": {
+              "type": "string",
+              "minLength": 8
+            },
+            "display_name": {
+              "type": "string"
+            }
+          }
+        },
+        "example": {
+          "email": "a@example.com",
+          "password": "correct horse",
+          "display_name": "Ada"
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "user_id",
+              "display_name",
+              "token"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            }
+          },
+          "example": {
+            "user_id": "u_1",
+            "display_name": "Ada",
+            "token": "..."
+          }
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "email_taken",
+                      "handle_taken"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "email_taken",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /auth/login": {
+      "request": {
+        "body": {
+          "type": "object",
+          "required": [
+            "email",
+            "password"
+          ],
+          "properties": {
+            "email": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          }
+        },
+        "example": {
+          "email": "a@example.com",
+          "password": "correct horse"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "user_id",
+              "display_name",
+              "token"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            }
+          },
+          "example": {
+            "user_id": "u_1",
+            "display_name": "Ada",
+            "token": "..."
+          }
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "GET /me": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "as_of": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 instant with offset; anything else (naive, bare date, empty) is 422"
+            },
+            "known_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 instant with offset; anything else (naive, bare date, empty) is 422"
+            }
+          }
+        },
+        "example": {
+          "as_of": "2026-09-24T13:20:00+00:00"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "user_id",
+              "display_name",
+              "handle",
+              "balance",
+              "currency",
+              "minor_units",
+              "total",
+              "available",
+              "held"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "balance": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "currency": {
+                "type": "string"
+              },
+              "minor_units": {
+                "enum": [
+                  0,
+                  2,
+                  3
+                ]
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "available": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "held": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "as_of": {
+                "type": "string",
+                "description": "present when supplied; echoed exactly as given"
+              },
+              "known_at": {
+                "type": "string",
+                "description": "present when supplied; echoed exactly as given"
+              }
+            }
+          },
+          "example": {
+            "user_id": "u_ada",
+            "display_name": "Ada",
+            "handle": "ada",
+            "balance": 10000,
+            "total": 10000,
+            "available": 8000,
+            "held": 2000,
+            "currency": "EUR",
+            "minor_units": 2
+          },
+          "description": "balance == total; available == total - held >= 0"
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          },
+          "description": "invalid or empty as_of / known_at"
+        }
+      }
+    },
+    "POST /payments": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": [
+            "to_handle",
+            "amount"
+          ],
+          "properties": {
+            "to_handle": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number",
+              "description": "integral numeric value; 1000, 1000.0, 1e3 equivalent; 1..1000000000"
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "visibility": {
+              "enum": [
+                "public",
+                "private"
+              ]
+            }
+          }
+        },
+        "example": {
+          "to_handle": "bob",
+          "amount": 1500,
+          "note": "dinner",
+          "visibility": "public"
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "currency",
+              "note",
+              "visibility",
+              "request_id",
+              "created_at"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "settlement_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null for non-settlement payments (§11)"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "authorization_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null unless created by a capture"
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_7",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 1500,
+            "currency": "EUR",
+            "note": "dinner",
+            "visibility": "public",
+            "request_id": null,
+            "created_at": "2026-09-24T11:04:03+00:00"
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "currency",
+              "note",
+              "visibility",
+              "request_id",
+              "created_at"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "settlement_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null for non-settlement payments (§11)"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "authorization_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null unless created by a capture"
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_7",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 1500,
+            "currency": "EUR",
+            "note": "dinner",
+            "visibility": "public",
+            "request_id": null,
+            "created_at": "2026-09-24T11:04:03+00:00"
+          },
+          "description": "replay: body identical to original"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "insufficient_funds",
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "insufficient_funds",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed",
+                      "self_payment"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /requests": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": [
+            "payer_handle",
+            "amount"
+          ],
+          "properties": {
+            "payer_handle": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number",
+              "description": "integral numeric value; 1000, 1000.0, 1e3 equivalent; 1..1000000000"
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        },
+        "example": {
+          "payer_handle": "ada",
+          "amount": 1200,
+          "note": "taxi"
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "requester_id",
+              "requester_handle",
+              "payer_id",
+              "payer_handle",
+              "amount",
+              "currency",
+              "note",
+              "status",
+              "payment_id",
+              "created_at"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "payer_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "payer_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "paid",
+                  "declined",
+                  "cancelled"
+                ]
+              },
+              "payment_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              }
+            }
+          },
+          "example": {
+            "request_id": "rq_4",
+            "requester_id": "u_bob",
+            "requester_handle": "bob",
+            "payer_id": "u_ada",
+            "payer_handle": "ada",
+            "amount": 1200,
+            "currency": "EUR",
+            "note": "taxi",
+            "status": "pending",
+            "payment_id": null,
+            "created_at": "2026-09-24T11:06:10+00:00"
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "requester_id",
+              "requester_handle",
+              "payer_id",
+              "payer_handle",
+              "amount",
+              "currency",
+              "note",
+              "status",
+              "payment_id",
+              "created_at"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "payer_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "payer_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "paid",
+                  "declined",
+                  "cancelled"
+                ]
+              },
+              "payment_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              }
+            }
+          },
+          "example": {
+            "request_id": "rq_4",
+            "requester_id": "u_bob",
+            "requester_handle": "bob",
+            "payer_id": "u_ada",
+            "payer_handle": "ada",
+            "amount": 1200,
+            "currency": "EUR",
+            "note": "taxi",
+            "status": "pending",
+            "payment_id": null,
+            "created_at": "2026-09-24T11:06:10+00:00"
+          },
+          "description": "replay"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "idempotency_key_reuse",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed",
+                      "self_request"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /requests/{id}/pay": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "properties": {
+            "visibility": {
+              "enum": [
+                "public",
+                "private"
+              ]
+            }
+          }
+        },
+        "example": {
+          "visibility": "private"
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "currency",
+              "note",
+              "visibility",
+              "request_id",
+              "created_at"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "settlement_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null for non-settlement payments (§11)"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "authorization_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null unless created by a capture"
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_8",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 1200,
+            "currency": "EUR",
+            "note": "taxi",
+            "visibility": "private",
+            "request_id": "rq_4",
+            "created_at": "2026-09-24T11:04:03+00:00"
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "currency",
+              "note",
+              "visibility",
+              "request_id",
+              "created_at"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "settlement_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null for non-settlement payments (§11)"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "authorization_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null unless created by a capture"
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_8",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 1200,
+            "currency": "EUR",
+            "note": "taxi",
+            "visibility": "private",
+            "request_id": "rq_4",
+            "created_at": "2026-09-24T11:04:03+00:00"
+          },
+          "description": "replay"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "403": {
+          "status": 403,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "forbidden",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "request_not_pending",
+                      "insufficient_funds",
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "request_not_pending",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /requests/{id}/decline": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "requester_id",
+              "requester_handle",
+              "payer_id",
+              "payer_handle",
+              "amount",
+              "currency",
+              "note",
+              "status",
+              "payment_id",
+              "created_at"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "payer_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "payer_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "paid",
+                  "declined",
+                  "cancelled"
+                ]
+              },
+              "payment_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              }
+            }
+          },
+          "example": {
+            "request_id": "rq_4",
+            "requester_id": "u_bob",
+            "requester_handle": "bob",
+            "payer_id": "u_ada",
+            "payer_handle": "ada",
+            "amount": 1200,
+            "currency": "EUR",
+            "note": "taxi",
+            "status": "declined",
+            "payment_id": null,
+            "created_at": "2026-09-24T11:06:10+00:00"
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "403": {
+          "status": 403,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "forbidden",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "request_not_pending"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "request_not_pending",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /requests/{id}/cancel": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "requester_id",
+              "requester_handle",
+              "payer_id",
+              "payer_handle",
+              "amount",
+              "currency",
+              "note",
+              "status",
+              "payment_id",
+              "created_at"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "requester_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "payer_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "payer_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "paid",
+                  "declined",
+                  "cancelled"
+                ]
+              },
+              "payment_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              }
+            }
+          },
+          "example": {
+            "request_id": "rq_4",
+            "requester_id": "u_bob",
+            "requester_handle": "bob",
+            "payer_id": "u_ada",
+            "payer_handle": "ada",
+            "amount": 1200,
+            "currency": "EUR",
+            "note": "taxi",
+            "status": "cancelled",
+            "payment_id": null,
+            "created_at": "2026-09-24T11:06:10+00:00"
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "403": {
+          "status": 403,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "forbidden",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "request_not_pending"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "request_not_pending",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "GET /requests": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Accept": {
+            "type": "string",
+            "description": "not text/html -> JSON"
+          }
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": "1..200, default 50"
+            },
+            "offset": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": ">=0, default 0"
+            },
+            "direction": {
+              "enum": [
+                "incoming",
+                "outgoing"
+              ]
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "paid",
+                "declined",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "example": {
+          "direction": "incoming",
+          "status": "pending",
+          "limit": "50",
+          "offset": "0"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "requests",
+              "has_more"
+            ],
+            "properties": {
+              "requests": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "request_id",
+                    "requester_id",
+                    "requester_handle",
+                    "payer_id",
+                    "payer_handle",
+                    "amount",
+                    "currency",
+                    "note",
+                    "status",
+                    "payment_id",
+                    "created_at"
+                  ],
+                  "properties": {
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "requester_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "requester_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "payer_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "payer_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "paid",
+                        "declined",
+                        "cancelled"
+                      ]
+                    },
+                    "payment_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    }
+                  }
+                }
+              },
+              "has_more": {
+                "type": "boolean"
+              }
+            }
+          },
+          "example": {
+            "requests": [
+              {
+                "request_id": "rq_4",
+                "requester_id": "u_bob",
+                "requester_handle": "bob",
+                "payer_id": "u_ada",
+                "payer_handle": "ada",
+                "amount": 1200,
+                "currency": "EUR",
+                "note": "taxi",
+                "status": "pending",
+                "payment_id": null,
+                "created_at": "2026-09-24T11:06:10+00:00"
+              }
+            ],
+            "has_more": false
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /splits": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": [
+            "amount",
+            "participant_handles"
+          ],
+          "properties": {
+            "amount": {
+              "type": "number",
+              "description": "integral numeric value; 1000, 1000.0, 1e3 equivalent; 1..1000000000"
+            },
+            "participant_handles": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        },
+        "example": {
+          "amount": 3000,
+          "participant_handles": [
+            "ada",
+            "bob",
+            "cy"
+          ],
+          "note": "dinner"
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "split_id",
+              "amount",
+              "currency",
+              "note",
+              "shares",
+              "requests",
+              "created_at"
+            ],
+            "properties": {
+              "split_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "shares": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "handle",
+                    "amount"
+                  ],
+                  "properties": {
+                    "handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "requests": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "request_id",
+                    "requester_id",
+                    "requester_handle",
+                    "payer_id",
+                    "payer_handle",
+                    "amount",
+                    "currency",
+                    "note",
+                    "status",
+                    "payment_id",
+                    "created_at"
+                  ],
+                  "properties": {
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "requester_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "requester_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "payer_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "payer_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "paid",
+                        "declined",
+                        "cancelled"
+                      ]
+                    },
+                    "payment_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    }
+                  }
+                }
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              }
+            }
+          },
+          "example": {
+            "split_id": "sp_2",
+            "amount": 3000,
+            "currency": "EUR",
+            "note": "dinner",
+            "shares": [
+              {
+                "handle": "ada",
+                "amount": 1000
+              },
+              {
+                "handle": "bob",
+                "amount": 1000
+              },
+              {
+                "handle": "cy",
+                "amount": 1000
+              }
+            ],
+            "requests": [
+              {
+                "request_id": "rq_5",
+                "requester_id": "u_ada",
+                "requester_handle": "ada",
+                "payer_id": "u_bob",
+                "payer_handle": "bob",
+                "amount": 1000,
+                "currency": "EUR",
+                "note": "dinner",
+                "status": "pending",
+                "payment_id": null,
+                "created_at": "2026-09-24T11:11:00+00:00"
+              },
+              {
+                "request_id": "rq_6",
+                "requester_id": "u_ada",
+                "requester_handle": "ada",
+                "payer_id": "u_cy",
+                "payer_handle": "cy",
+                "amount": 1000,
+                "currency": "EUR",
+                "note": "dinner",
+                "status": "pending",
+                "payment_id": null,
+                "created_at": "2026-09-24T11:11:00+00:00"
+              }
+            ],
+            "created_at": "2026-09-24T11:11:00+00:00"
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "split_id",
+              "amount",
+              "currency",
+              "note",
+              "shares",
+              "requests",
+              "created_at"
+            ],
+            "properties": {
+              "split_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "shares": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "handle",
+                    "amount"
+                  ],
+                  "properties": {
+                    "handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "requests": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "request_id",
+                    "requester_id",
+                    "requester_handle",
+                    "payer_id",
+                    "payer_handle",
+                    "amount",
+                    "currency",
+                    "note",
+                    "status",
+                    "payment_id",
+                    "created_at"
+                  ],
+                  "properties": {
+                    "request_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "requester_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "requester_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "payer_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "payer_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "paid",
+                        "declined",
+                        "cancelled"
+                      ]
+                    },
+                    "payment_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    }
+                  }
+                }
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              }
+            }
+          },
+          "example": {
+            "split_id": "sp_2",
+            "amount": 3000,
+            "currency": "EUR",
+            "note": "dinner",
+            "shares": [
+              {
+                "handle": "ada",
+                "amount": 1000
+              },
+              {
+                "handle": "bob",
+                "amount": 1000
+              },
+              {
+                "handle": "cy",
+                "amount": 1000
+              }
+            ],
+            "requests": [
+              {
+                "request_id": "rq_5",
+                "requester_id": "u_ada",
+                "requester_handle": "ada",
+                "payer_id": "u_bob",
+                "payer_handle": "bob",
+                "amount": 1000,
+                "currency": "EUR",
+                "note": "dinner",
+                "status": "pending",
+                "payment_id": null,
+                "created_at": "2026-09-24T11:11:00+00:00"
+              },
+              {
+                "request_id": "rq_6",
+                "requester_id": "u_ada",
+                "requester_handle": "ada",
+                "payer_id": "u_cy",
+                "payer_handle": "cy",
+                "amount": 1000,
+                "currency": "EUR",
+                "note": "dinner",
+                "status": "pending",
+                "payment_id": null,
+                "created_at": "2026-09-24T11:11:00+00:00"
+              }
+            ],
+            "created_at": "2026-09-24T11:11:00+00:00"
+          },
+          "description": "replay"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "idempotency_key_reuse",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "GET /activity": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          }
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": "1..200, default 50"
+            },
+            "offset": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": ">=0, default 0"
+            }
+          }
+        },
+        "example": {
+          "limit": "50",
+          "offset": "0"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payments",
+              "has_more"
+            ],
+            "properties": {
+              "payments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "payment_id",
+                    "from_user_id",
+                    "from_handle",
+                    "to_user_id",
+                    "to_handle",
+                    "amount",
+                    "currency",
+                    "note",
+                    "visibility",
+                    "request_id",
+                    "created_at"
+                  ],
+                  "properties": {
+                    "payment_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "to_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "to_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "visibility": {
+                      "enum": [
+                        "public",
+                        "private"
+                      ]
+                    },
+                    "request_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64
+                    },
+                    "settlement_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64,
+                      "description": "null for non-settlement payments (§11)"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "authorization_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64,
+                      "description": "null unless created by a capture"
+                    }
+                  }
+                }
+              },
+              "has_more": {
+                "type": "boolean"
+              }
+            }
+          },
+          "example": {
+            "payments": [
+              {
+                "payment_id": "p_7",
+                "from_user_id": "u_ada",
+                "from_handle": "ada",
+                "to_user_id": "u_bob",
+                "to_handle": "bob",
+                "amount": 1500,
+                "currency": "EUR",
+                "note": "dinner",
+                "visibility": "public",
+                "request_id": null,
+                "created_at": "2026-09-24T11:04:03+00:00"
+              }
+            ],
+            "has_more": false
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /settlements": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": [
+            "transfers"
+          ],
+          "properties": {
+            "transfers": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "required": [
+                  "from_handle",
+                  "to_handle",
+                  "amount"
+                ],
+                "properties": {
+                  "from_handle": {
+                    "type": "string"
+                  },
+                  "to_handle": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "description": "integral numeric value; 1000, 1000.0, 1e3 equivalent; 1..1000000000"
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "visibility": {
+                    "enum": [
+                      "public",
+                      "private"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "example": {
+          "transfers": [
+            {
+              "from_handle": "ada",
+              "to_handle": "bob",
+              "amount": 100
+            },
+            {
+              "from_handle": "bob",
+              "to_handle": "cy",
+              "amount": 50
+            }
+          ]
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "settlement_id",
+              "committed_at",
+              "payments"
+            ],
+            "properties": {
+              "settlement_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "committed_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "payments": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "payment_id",
+                    "from_user_id",
+                    "from_handle",
+                    "to_user_id",
+                    "to_handle",
+                    "amount",
+                    "currency",
+                    "note",
+                    "visibility",
+                    "request_id",
+                    "created_at",
+                    "settlement_id"
+                  ],
+                  "properties": {
+                    "payment_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "to_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "to_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "visibility": {
+                      "enum": [
+                        "public",
+                        "private"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "null"
+                    },
+                    "settlement_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "authorization_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64,
+                      "description": "null unless created by a capture"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "settlement_id": "st_1",
+            "committed_at": "2026-09-24T12:00:00+00:00",
+            "payments": [
+              {
+                "payment_id": "p_20",
+                "from_user_id": "u_ada",
+                "from_handle": "ada",
+                "to_user_id": "u_bob",
+                "to_handle": "bob",
+                "amount": 100,
+                "currency": "EUR",
+                "note": "",
+                "visibility": "public",
+                "request_id": null,
+                "created_at": "2026-09-24T12:00:00+00:00",
+                "settlement_id": "st_1"
+              },
+              {
+                "payment_id": "p_21",
+                "from_user_id": "u_bob",
+                "from_handle": "bob",
+                "to_user_id": "u_cy",
+                "to_handle": "cy",
+                "amount": 50,
+                "currency": "EUR",
+                "note": "",
+                "visibility": "public",
+                "request_id": null,
+                "created_at": "2026-09-24T12:00:00+00:00",
+                "settlement_id": "st_1"
+              }
+            ]
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "settlement_id",
+              "committed_at",
+              "payments"
+            ],
+            "properties": {
+              "settlement_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "committed_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "payments": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "payment_id",
+                    "from_user_id",
+                    "from_handle",
+                    "to_user_id",
+                    "to_handle",
+                    "amount",
+                    "currency",
+                    "note",
+                    "visibility",
+                    "request_id",
+                    "created_at",
+                    "settlement_id"
+                  ],
+                  "properties": {
+                    "payment_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "to_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "to_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "visibility": {
+                      "enum": [
+                        "public",
+                        "private"
+                      ]
+                    },
+                    "request_id": {
+                      "type": "null"
+                    },
+                    "settlement_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "authorization_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64,
+                      "description": "null unless created by a capture"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "settlement_id": "st_1",
+            "committed_at": "2026-09-24T12:00:00+00:00",
+            "payments": [
+              {
+                "payment_id": "p_20",
+                "from_user_id": "u_ada",
+                "from_handle": "ada",
+                "to_user_id": "u_bob",
+                "to_handle": "bob",
+                "amount": 100,
+                "currency": "EUR",
+                "note": "",
+                "visibility": "public",
+                "request_id": null,
+                "created_at": "2026-09-24T12:00:00+00:00",
+                "settlement_id": "st_1"
+              },
+              {
+                "payment_id": "p_21",
+                "from_user_id": "u_bob",
+                "from_handle": "bob",
+                "to_user_id": "u_cy",
+                "to_handle": "cy",
+                "amount": 50,
+                "currency": "EUR",
+                "note": "",
+                "visibility": "public",
+                "request_id": null,
+                "created_at": "2026-09-24T12:00:00+00:00",
+                "settlement_id": "st_1"
+              }
+            ]
+          },
+          "description": "replay"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "403": {
+          "status": 403,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "forbidden",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "insufficient_funds",
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "insufficient_funds",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed",
+                      "self_payment"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /authorizations": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": [
+            "to_handle",
+            "amount"
+          ],
+          "properties": {
+            "to_handle": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number",
+              "description": "integral numeric value; 1..1000000000"
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "visibility": {
+              "enum": [
+                "public",
+                "private"
+              ]
+            }
+          }
+        },
+        "example": {
+          "to_handle": "bob",
+          "amount": 2000,
+          "note": "deposit",
+          "visibility": "private"
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "authorization_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "captured_amount",
+              "remaining_amount",
+              "currency",
+              "note",
+              "visibility",
+              "status",
+              "expires_at",
+              "payment_id",
+              "created_at",
+              "closed_at"
+            ],
+            "properties": {
+              "authorization_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "captured_amount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remaining_amount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "still held; 0 when closed"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "captured",
+                  "voided",
+                  "expired"
+                ]
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "payment_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "latest capture"
+              },
+              "payment_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "description": "every capture in order"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "closed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "null while open; event time when closed"
+              }
+            }
+          },
+          "example": {
+            "authorization_id": "a_4",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 2000,
+            "captured_amount": 0,
+            "currency": "EUR",
+            "note": "deposit",
+            "visibility": "private",
+            "status": "open",
+            "expires_at": "2026-09-24T13:20:00+00:00",
+            "payment_id": null,
+            "created_at": "2026-09-24T13:10:00+00:00"
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "authorization_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "captured_amount",
+              "remaining_amount",
+              "currency",
+              "note",
+              "visibility",
+              "status",
+              "expires_at",
+              "payment_id",
+              "created_at",
+              "closed_at"
+            ],
+            "properties": {
+              "authorization_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "captured_amount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remaining_amount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "still held; 0 when closed"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "captured",
+                  "voided",
+                  "expired"
+                ]
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "payment_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "latest capture"
+              },
+              "payment_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "description": "every capture in order"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "closed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "null while open; event time when closed"
+              }
+            }
+          },
+          "example": {
+            "authorization_id": "a_4",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 2000,
+            "captured_amount": 0,
+            "currency": "EUR",
+            "note": "deposit",
+            "visibility": "private",
+            "status": "open",
+            "expires_at": "2026-09-24T13:20:00+00:00",
+            "payment_id": null,
+            "created_at": "2026-09-24T13:10:00+00:00"
+          },
+          "description": "replay"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "insufficient_funds",
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "insufficient_funds",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed",
+                      "self_payment"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /authorizations/{id}/capture": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "type": "number",
+              "description": "integral numeric value; 1..1000000000"
+            },
+            "final": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "example": {
+          "amount": 1500
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "currency",
+              "note",
+              "visibility",
+              "request_id",
+              "created_at",
+              "authorization_id"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "request_id": {
+                "type": "null"
+              },
+              "settlement_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null for non-settlement payments (§11)"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "authorization_id": {
+                "type": "string",
+                "maxLength": 64
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_9",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 1500,
+            "currency": "EUR",
+            "note": "deposit",
+            "visibility": "private",
+            "request_id": null,
+            "created_at": "2026-09-24T13:12:00+00:00",
+            "authorization_id": "a_4"
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "currency",
+              "note",
+              "visibility",
+              "request_id",
+              "created_at",
+              "authorization_id"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "request_id": {
+                "type": "null"
+              },
+              "settlement_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "null for non-settlement payments (§11)"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "authorization_id": {
+                "type": "string",
+                "maxLength": 64
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_9",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 1500,
+            "currency": "EUR",
+            "note": "deposit",
+            "visibility": "private",
+            "request_id": null,
+            "created_at": "2026-09-24T13:12:00+00:00",
+            "authorization_id": "a_4"
+          },
+          "description": "replay"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "403": {
+          "status": 403,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "forbidden",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "authorization_not_open",
+                      "authorization_expired",
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "authorization_not_open",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "capture_exceeds_authorization",
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "capture_exceeds_authorization",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "POST /authorizations/{id}/void": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "authorization_id",
+              "from_user_id",
+              "from_handle",
+              "to_user_id",
+              "to_handle",
+              "amount",
+              "captured_amount",
+              "remaining_amount",
+              "currency",
+              "note",
+              "visibility",
+              "status",
+              "expires_at",
+              "payment_id",
+              "created_at",
+              "closed_at"
+            ],
+            "properties": {
+              "authorization_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "from_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "to_user_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "to_handle": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,20}$"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "captured_amount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remaining_amount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "still held; 0 when closed"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "visibility": {
+                "enum": [
+                  "public",
+                  "private"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "captured",
+                  "voided",
+                  "expired"
+                ]
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "payment_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64,
+                "description": "latest capture"
+              },
+              "payment_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "description": "every capture in order"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "closed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "null while open; event time when closed"
+              }
+            }
+          },
+          "example": {
+            "authorization_id": "a_4",
+            "from_user_id": "u_ada",
+            "from_handle": "ada",
+            "to_user_id": "u_bob",
+            "to_handle": "bob",
+            "amount": 2000,
+            "captured_amount": 0,
+            "currency": "EUR",
+            "note": "deposit",
+            "visibility": "private",
+            "status": "voided",
+            "expires_at": "2026-09-24T13:20:00+00:00",
+            "payment_id": null,
+            "created_at": "2026-09-24T13:10:00+00:00",
+            "remaining_amount": 0,
+            "payment_ids": [],
+            "closed_at": "2026-09-24T13:15:00+00:00"
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "403": {
+          "status": 403,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "forbidden",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "authorization_not_open"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "authorization_not_open",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "GET /authorizations": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Accept": {
+            "type": "string",
+            "description": "not text/html -> JSON"
+          }
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": "1..200, default 50"
+            },
+            "offset": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": ">=0, default 0"
+            },
+            "direction": {
+              "enum": [
+                "incoming",
+                "outgoing"
+              ]
+            },
+            "status": {
+              "enum": [
+                "open",
+                "captured",
+                "voided",
+                "expired"
+              ]
+            }
+          }
+        },
+        "example": {
+          "direction": "outgoing",
+          "status": "open",
+          "limit": "50",
+          "offset": "0"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "authorizations",
+              "has_more"
+            ],
+            "properties": {
+              "authorizations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "authorization_id",
+                    "from_user_id",
+                    "from_handle",
+                    "to_user_id",
+                    "to_handle",
+                    "amount",
+                    "captured_amount",
+                    "remaining_amount",
+                    "currency",
+                    "note",
+                    "visibility",
+                    "status",
+                    "expires_at",
+                    "payment_id",
+                    "created_at",
+                    "closed_at"
+                  ],
+                  "properties": {
+                    "authorization_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "from_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "to_user_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "to_handle": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,20}$"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "captured_amount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "remaining_amount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "still held; 0 when closed"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "visibility": {
+                      "enum": [
+                        "public",
+                        "private"
+                      ]
+                    },
+                    "status": {
+                      "enum": [
+                        "open",
+                        "captured",
+                        "voided",
+                        "expired"
+                      ]
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "payment_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64,
+                      "description": "latest capture"
+                    },
+                    "payment_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "description": "every capture in order"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "closed_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "null while open; event time when closed"
+                    }
+                  }
+                }
+              },
+              "has_more": {
+                "type": "boolean"
+              }
+            }
+          },
+          "example": {
+            "authorizations": [
+              {
+                "authorization_id": "a_4",
+                "from_user_id": "u_ada",
+                "from_handle": "ada",
+                "to_user_id": "u_bob",
+                "to_handle": "bob",
+                "amount": 2000,
+                "captured_amount": 0,
+                "currency": "EUR",
+                "note": "deposit",
+                "visibility": "private",
+                "status": "open",
+                "expires_at": "2026-09-24T13:20:00+00:00",
+                "payment_id": null,
+                "created_at": "2026-09-24T13:10:00+00:00",
+                "remaining_amount": 2000,
+                "payment_ids": [],
+                "closed_at": null
+              }
+            ],
+            "has_more": false
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "GET / (Accept: text/html)": {
+      "request": {
+        "headers": {
+          "Accept": {
+            "type": "string",
+            "pattern": "text/html"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "string",
+            "contentMediaType": "text/html"
+          },
+          "example": "<!doctype html>...",
+          "description": "Balance, pay form, request form and the activity feed; exposes the data-testid attributes listed in stage-2.md"
+        }
+      }
+    },
+    "GET /requests (Accept: text/html)": {
+      "request": {
+        "headers": {
+          "Accept": {
+            "type": "string",
+            "pattern": "text/html"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "string",
+            "contentMediaType": "text/html"
+          },
+          "example": "<!doctype html>...",
+          "description": "Incoming and outgoing requests, with pay, decline and cancel; exposes the data-testid attributes listed in stage-2.md"
+        }
+      }
+    },
+    "GET /split (Accept: text/html)": {
+      "request": {
+        "headers": {
+          "Accept": {
+            "type": "string",
+            "pattern": "text/html"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "string",
+            "contentMediaType": "text/html"
+          },
+          "example": "<!doctype html>...",
+          "description": "Split form; exposes the data-testid attributes listed in stage-2.md"
+        }
+      }
+    },
+    "GET /signup (Accept: text/html)": {
+      "request": {
+        "headers": {
+          "Accept": {
+            "type": "string",
+            "pattern": "text/html"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "string",
+            "contentMediaType": "text/html"
+          },
+          "example": "<!doctype html>...",
+          "description": "Signup; exposes the data-testid attributes listed in stage-2.md"
+        }
+      }
+    },
+    "GET /login (Accept: text/html)": {
+      "request": {
+        "headers": {
+          "Accept": {
+            "type": "string",
+            "pattern": "text/html"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "string",
+            "contentMediaType": "text/html"
+          },
+          "example": "<!doctype html>...",
+          "description": "Login; exposes the data-testid attributes listed in stage-2.md"
+        }
+      }
+    },
+    "GET /authorizations (Accept: text/html)": {
+      "request": {
+        "headers": {
+          "Accept": {
+            "type": "string",
+            "pattern": "text/html"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "string",
+            "contentMediaType": "text/html"
+          },
+          "example": "<!doctype html>...",
+          "description": "Authorization list with capture and void; exposes the data-testid attributes listed in stage-2.md"
+        }
+      }
+    },
+    "POST /payments/{payment_id}/corrections": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": [
+            "expected_revision",
+            "amount",
+            "effective_at",
+            "reason"
+          ],
+          "properties": {
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "amount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000
+            },
+            "effective_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 instant not later than now"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "example": {
+          "expected_revision": 1,
+          "amount": 400,
+          "effective_at": "2026-09-20T12:00:00+00:00",
+          "reason": "corrected amount"
+        }
+      },
+      "responses": {
+        "201": {
+          "status": 201,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "revision",
+              "amount",
+              "effective_at",
+              "recorded_at",
+              "reason"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000000
+              },
+              "effective_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "recorded_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_7",
+            "revision": 2,
+            "amount": 400,
+            "effective_at": "2026-09-20T12:00:00+00:00",
+            "recorded_at": "2026-09-24T12:30:00+00:00",
+            "reason": "corrected amount"
+          }
+        },
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "payment_id",
+              "revision",
+              "amount",
+              "effective_at",
+              "recorded_at",
+              "reason"
+            ],
+            "properties": {
+              "payment_id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000000
+              },
+              "effective_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "recorded_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "RFC 3339 with explicit offset"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "example": {
+            "payment_id": "p_7",
+            "revision": 2,
+            "amount": 400,
+            "effective_at": "2026-09-20T12:00:00+00:00",
+            "recorded_at": "2026-09-24T12:30:00+00:00",
+            "reason": "corrected amount"
+          },
+          "description": "replay returns the original revision, even after newer revisions"
+        },
+        "400": {
+          "status": 400,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "malformed_request",
+                      "missing_idempotency_key"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "malformed_request",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "403": {
+          "status": 403,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "forbidden",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "409": {
+          "status": 409,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "stale_revision",
+                      "insufficient_funds",
+                      "historical_overdraft",
+                      "idempotency_key_reuse"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "stale_revision",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed",
+                      "linked_payment_immutable"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          }
+        }
+      }
+    },
+    "GET /payments/{payment_id}/revisions": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          }
+        },
+        "body": {
+          "type": "null",
+          "description": "no body"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "revisions"
+            ],
+            "properties": {
+              "revisions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "payment_id",
+                    "revision",
+                    "amount",
+                    "effective_at",
+                    "recorded_at",
+                    "reason"
+                  ],
+                  "properties": {
+                    "payment_id": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000000
+                    },
+                    "effective_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "recorded_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "revisions": [
+              {
+                "payment_id": "p_7",
+                "revision": 1,
+                "amount": 500,
+                "effective_at": "2026-09-24T11:04:03+00:00",
+                "recorded_at": "2026-09-24T11:04:03+00:00",
+                "reason": ""
+              },
+              {
+                "payment_id": "p_7",
+                "revision": 2,
+                "amount": 400,
+                "effective_at": "2026-09-20T12:00:00+00:00",
+                "recorded_at": "2026-09-24T12:30:00+00:00",
+                "reason": "corrected amount"
+              }
+            ]
+          }
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          },
+          "description": "unknown payment, or caller is not a party (even for a public payment)"
+        }
+      }
+    },
+    "GET /statement": {
+      "request": {
+        "headers": {
+          "Authorization": {
+            "type": "string",
+            "pattern": "^Bearer .+"
+          }
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 instant with offset; anything else (naive, bare date, empty) is 422"
+            },
+            "to": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 instant with offset; anything else (naive, bare date, empty) is 422"
+            },
+            "known_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 instant with offset; anything else (naive, bare date, empty) is 422"
+            },
+            "limit": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": "1..200, default 50"
+            },
+            "offset": {
+              "type": "string",
+              "pattern": "^[0-9]+$",
+              "description": ">=0, default 0"
+            },
+            "snapshot": {
+              "type": "string",
+              "description": "only limit and offset may accompany it"
+            }
+          }
+        },
+        "example": {
+          "from": "2026-09-24T00:00:00+00:00",
+          "to": "2026-09-25T00:00:00+00:00",
+          "limit": "50",
+          "offset": "0"
+        }
+      },
+      "responses": {
+        "200": {
+          "status": 200,
+          "schema": {
+            "type": "object",
+            "required": [
+              "opening_balance",
+              "entries",
+              "closing_balance",
+              "has_more",
+              "snapshot"
+            ],
+            "properties": {
+              "opening_balance": {
+                "type": "integer"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "payment",
+                    "delta",
+                    "balance_after",
+                    "revision",
+                    "effective_at",
+                    "recorded_at"
+                  ],
+                  "properties": {
+                    "payment": {
+                      "type": "object",
+                      "required": [
+                        "payment_id",
+                        "from_user_id",
+                        "from_handle",
+                        "to_user_id",
+                        "to_handle",
+                        "amount",
+                        "currency",
+                        "note",
+                        "visibility",
+                        "request_id",
+                        "created_at"
+                      ],
+                      "properties": {
+                        "payment_id": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "from_user_id": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "from_handle": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9_]{1,20}$"
+                        },
+                        "to_user_id": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "to_handle": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9_]{1,20}$"
+                        },
+                        "amount": {
+                          "type": "integer"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "note": {
+                          "type": "string"
+                        },
+                        "visibility": {
+                          "enum": [
+                            "public",
+                            "private"
+                          ]
+                        },
+                        "request_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 64
+                        },
+                        "settlement_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 64,
+                          "description": "null for non-settlement payments (§11)"
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "RFC 3339 with explicit offset"
+                        },
+                        "authorization_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 64,
+                          "description": "null unless created by a capture"
+                        }
+                      }
+                    },
+                    "delta": {
+                      "type": "integer"
+                    },
+                    "balance_after": {
+                      "type": "integer"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "effective_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    },
+                    "recorded_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "RFC 3339 with explicit offset"
+                    }
+                  }
+                }
+              },
+              "closing_balance": {
+                "type": "integer"
+              },
+              "has_more": {
+                "type": "boolean"
+              },
+              "snapshot": {
+                "type": "string",
+                "description": "opaque token; returned by every first (non-snapshot) read"
+              }
+            }
+          },
+          "example": {
+            "opening_balance": 10000,
+            "entries": [
+              {
+                "payment": {
+                  "payment_id": "p_1",
+                  "from_user_id": "u_ada",
+                  "from_handle": "ada",
+                  "to_user_id": "u_bob",
+                  "to_handle": "bob",
+                  "amount": 500,
+                  "currency": "EUR",
+                  "note": "dinner",
+                  "visibility": "public",
+                  "request_id": null,
+                  "created_at": "2026-09-24T11:04:03+00:00",
+                  "authorization_id": null
+                },
+                "delta": -500,
+                "balance_after": 9500,
+                "revision": 1,
+                "effective_at": "2026-09-24T11:04:03+00:00",
+                "recorded_at": "2026-09-24T11:04:03+00:00"
+              },
+              {
+                "payment": {
+                  "payment_id": "p_2",
+                  "from_user_id": "u_bob",
+                  "from_handle": "bob",
+                  "to_user_id": "u_ada",
+                  "to_handle": "ada",
+                  "amount": 1200,
+                  "currency": "EUR",
+                  "note": "dinner",
+                  "visibility": "public",
+                  "request_id": null,
+                  "created_at": "2026-09-24T11:04:03+00:00",
+                  "authorization_id": null
+                },
+                "delta": 1200,
+                "balance_after": 10700,
+                "revision": 1,
+                "effective_at": "2026-09-24T11:04:03+00:00",
+                "recorded_at": "2026-09-24T11:04:03+00:00"
+              }
+            ],
+            "closing_balance": 10700,
+            "has_more": false,
+            "snapshot": "opaque-token"
+          },
+          "description": "entries in [from, to), oldest first by selected effective_at then payment id"
+        },
+        "401": {
+          "status": 401,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "unauthenticated"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "unauthenticated",
+              "message": "human readable, any wording"
+            }
+          }
+        },
+        "404": {
+          "status": 404,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "not_found"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "not_found",
+              "message": "human readable, any wording"
+            }
+          },
+          "description": "unknown, foreign or pre-reset snapshot token"
+        },
+        "422": {
+          "status": 422,
+          "schema": {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "example": {
+            "error": {
+              "code": "validation_failed",
+              "message": "human readable, any wording"
+            }
+          },
+          "description": "invalid instants, limit/offset out of range, or from/to/known_at alongside snapshot"
+        }
+      }
+    }
+  }
+}
