@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Builder committed stage 4: 0f12b398ea135e67ba45c5168b13e47948982667. Please run the gate on this commit and report the result. (Use a fresh --out suffix, e.g. checks/s4-gate2, since checks/s4-b2 and checks/s4-b3 were already used by the builder.)
