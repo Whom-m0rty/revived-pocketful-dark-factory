@@ -160,18 +160,18 @@ report for the previous stage. No other message was sent to the room.
 |---|---|---|---|---|---|
 | 1 | 16:55 → 17:28 | 32 min | green, round 2 | 147/147 | — |
 | 2 | 17:29 → 18:16 | 47 min | green, round 3; layout clean after 3 design reviews | 147, 35/35 | — |
-| 3 | 18:16 → 18:43 | 27 min | green, round 3 | 147, 35, 6/6 | 149/149 |
+| 3 | 18:16 → 18:43 | 27 min | green, round 3 | 147, 35, 6/6 (5/6 in isolated mode, see below) | 149/149 |
 | 4 | 18:44 → 19:14 | 30 min | green, round 3 | 147, 35, 6, 5/5 | 91/92 |
 | Total | | 2 h 18 min | | every folder claims its stage, none overshoots | |
 
 Spend (list price, measured with ccusage over the seats' sessions): **$35.72** — Opus $26.87
-(builder, tester, designer), Sonnet $8.86 (coordinator). 40 commits: coordinator 22, tester 8,
-builder 6, designer 3.
+(builder, tester, designer), Sonnet $8.86 (coordinator); parts rounded. 39 commits by the
+seats (coordinator 22, tester 8, builder 6, designer 3) plus the one setup commit.
 
 Known miss: in stage 4 the tester's holdout caught that statement snapshots did not survive
-importing a stage-3 export. The builder disputed it and the coordinator ruled the requirement
-did not apply, reasoning that the stage-3 export never carried snapshots; the scenario was
-narrowed. The spec does require it ("retaining settlement membership, corrections and
+importing a stage-3 export. The tester itself asked the coordinator whether the requirement
+applied to an export that never carried snapshots; the coordinator ruled it did not, and the
+scenario was narrowed. The spec does require it ("retaining settlement membership, corrections and
 snapshots"), and our hidden suite still fails that one check. The arbitration step worked as
 designed and still produced a wrong ruling: the arbiter is a model too.
 
