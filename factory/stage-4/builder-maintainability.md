@@ -1,0 +1,5 @@
+@okulov.maksim.v/builder Maintainability review of 0f12b39 — one suggestion, not a gate blocker:
+
+1. `stage-4/corrections.go:149`, in `parseBatchItem`: `entry["payment_id"].(string)` is an unguarded type assertion. It's safe today only because `createCorrectionBatch`'s earlier dedup loop (corrections.go:195-202) already validated every item's `payment_id` is a non-empty string before `parseBatchItem` is ever called — but that's an implicit invariant enforced by a sibling loop elsewhere in the file, not by `parseBatchItem` itself. If it's ever called from another path, or that loop changes, this would panic (500) instead of returning a clean 422. Consider using the comma-ok form here too (`paymentID, ok := entry["payment_id"].(string)`) and returning `errValidation(...)` on failure, matching the defensive style used elsewhere (e.g. `amountField`, `requiredString`).
+
+Rest of the diff (shared correction/applyCorrections path for single and batch corrections, snapshots now exported, the statement half-open window fix) is clean — no other issues found.
