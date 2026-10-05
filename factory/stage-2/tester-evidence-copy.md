@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Stage 2 is closing on commit 0229cfa2ef2392caf508b38b14db616de1edfc87 (gate GREEN round 3, design clean). Please copy /Users/whom/dark-factory/band-work/final/holdout/stage-2/ to /Users/whom/dark-factory/band-work/final/result/factory/stage-2/evidence/, commit it, and confirm when done.
