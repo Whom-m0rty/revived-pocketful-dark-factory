@@ -18,7 +18,8 @@ Band room; the only human input per stage was the task dispatched to the coordin
 | `factory/skills/` | the design skill the designer seat uses |
 | `factory/setup/` | script that creates the seats in Band Desktop |
 | `factory/stage-N/` | per stage: contract, design system and mockups, review screenshots, decisions, holdout evidence |
-| `room.json` | the full Band room log of the submitted run |
+| `room.json` | the Band room log of the submitted run, downloaded unchanged (Download full session) |
+| `room-messages-text.json` | every text, error and task message of the same room, read with `band room messages --json`. The download above holds the newest 1,400 messages only, so it starts at 17:03 and misses the stage-1 dispatch and first handoffs; this file covers the whole run from 16:55 |
 
 ## Run a stage
 

@@ -174,3 +174,10 @@ did not apply, reasoning that the stage-3 export never carried snapshots; the sc
 narrowed. The spec does require it ("retaining settlement membership, corrections and
 snapshots"), and our hidden suite still fails that one check. The arbitration step worked as
 designed and still produced a wrong ruling: the arbiter is a model too.
+
+A second miss showed up only when we ran the shipped checks in the judges' isolated mode after
+the run: one stage-3 sample test fails there (5/6; every folder still claims its stage). The
+statement sorts entries with the same timestamp by payment id, not by creation order; inside
+the isolated network two payments can land in the same millisecond. Our seats ran the shipped
+checks in host mode, where requests are slower and the tie never happens. Lesson for the
+factory: give the seats the shipped-check command in `--mode isolated`, the way it is judged.
