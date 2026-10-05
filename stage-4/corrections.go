@@ -146,7 +146,11 @@ func (s *State) parseBatchItem(item any, now time.Time) (correction, *apiError) 
 	if apiErr != nil {
 		return c, apiErr
 	}
-	if c.payment = s.paymentsByID[entry["payment_id"].(string)]; c.payment == nil {
+	paymentID, ok := entry["payment_id"].(string)
+	if !ok {
+		return c, errValidation("payment_id must be a string")
+	}
+	if c.payment = s.paymentsByID[paymentID]; c.payment == nil {
 		return c, errNotFound("no such payment")
 	}
 	if c.payment.immutable() {
