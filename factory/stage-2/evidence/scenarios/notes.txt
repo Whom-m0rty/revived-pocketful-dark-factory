@@ -1,0 +1,63 @@
+Non-normative: "This stage defines the initial service and its API." # introduction
+Non-normative: "Build from the supplied requirements." # process instruction, not observable over HTTP
+Non-normative: "Source code, API documentation and schemas from existing products in this domain must not be used." # provenance rule, not observable over HTTP
+Non-normative: "Only the HTTP API is required." # scope statement
+Non-normative: "Deposits, top-ups, withdrawals, cards and bank integrations are out of scope." # out of scope
+Non-normative: "Deliver an HTTP service, a `Dockerfile` and a `RUN.md` with a command that builds and starts the service without manual setup." # delivery; the gate builds the Dockerfile itself
+Non-normative: "Language, framework and storage are unrestricted." # freedom, nothing to check
+Non-normative: "A `docker-compose.yml` is optional." # optional artifact
+Non-normative: "The submission is a containerized HTTP service, not a Python package." # delivery form, exercised by the gate build
+Non-normative: "Python is not required in the implementation." # freedom
+Non-normative: "TypeScript/JavaScript, Go, Rust, Java, Python and any other language are equally valid." # freedom
+Non-normative: "The harness builds the submitted `Dockerfile`, starts the resulting image and tests only its HTTP behavior; it does not import or execute the submission's source files on the judge host." # describes the harness
+Non-normative: "The image must run on its own with `-e PORT=<port>` and a port mapping." # exercised by the gate's docker run; no scenario can observe it separately
+Non-normative: "Runtime networking has no outbound access." # environment description
+Non-normative: "All runtime dependencies, initialization and seed data must work within that single container." # exercised by the gate container
+Non-normative: "Compose configuration is not used to start the service." # describes the harness
+Non-normative: "The service must operate within these limits:" # table header sentence; rows below
+Non-normative: "| CPU | 2 vCPU |" # enforced by the gate's docker run flags
+Non-normative: "| Memory | 2 GiB |" # enforced by the gate's docker run flags
+Non-normative: "| Start to first healthy response | 60 s |" # enforced by the gate's health wait
+Non-normative: "| Per-request timeout | 5 s (10 s for `POST /_test/reset`) |" # client timeouts; scenarios use a lenient timeout to avoid flakiness
+Non-normative: "| Outbound network | available during `docker build`, **none at run time** |" # environment description
+Non-normative: "| Disk | ephemeral; state need not survive a container restart |" # permission, nothing to assert
+Non-normative: "Runtime assets and dependencies must be included in the image." # UI assets; only the HTTP API is required in this stage
+Non-normative: "This includes fonts, scripts and stylesheets; external services are unavailable at runtime." # UI assets; not applicable to an API-only stage
+Non-normative: "Listen on `0.0.0.0` using the `PORT` environment variable, default `8080`." # exercised by the gate's docker run with PORT set
+Non-normative: "Non-200 responses are permitted before the service is ready." # permission
+Non-normative: "Their format is yours." # freedom
+Non-normative: "Directory and user-search endpoints are out of scope." # out of scope
+Non-normative: "An administrative balance endpoint is out of scope." # out of scope
+Non-normative: "Every 4xx and 5xx response carries this body:" # checked by assert_error in every refusal scenario
+Non-normative: "{ "error": { "code": "insufficient_funds", "message": "human readable, any wording" } }" # error body shape, checked by assert_error
+Non-normative: "Use the specified HTTP status and `code`." # checked by every refusal scenario
+Non-normative: "The human-readable `message` may use any wording." # permission; only the type is checked
+Non-normative: "Endpoint-specific errors are listed with each endpoint." # pointer
+Non-normative: "A field of the correct JSON type with an invalid format or out-of-range value gives 422 `validation_failed`, unless an endpoint specifies a different error." # general rule exercised by the endpoint-specific scenarios
+Non-normative: "In addition:" # connector
+Non-normative: "Email verification, password reset, refresh tokens and role-management endpoints are out of scope." # out of scope
+Non-normative: "Permissions specified elsewhere in these requirements still apply." # pointer
+Non-normative: "Exports may contain credentials and session tokens; handle them as private test artifacts." # handling advice
+Non-normative: "Test control calls have a 10-second timeout." # client timeout
+Non-normative: "State need not survive an abrupt container restart." # permission
+Non-normative: "Body:" # connector
+Non-normative: "| 403 | `forbidden` | Authenticated, but not permitted to touch this resource |" # covered too by permission scenarios
+Non-normative: "| 409 | `idempotency_key_reuse` | Key already used by this caller with a different request body |" # covered too by idempotency scenarios
+Non-normative: "Stable pagination during concurrent writes is not required for this endpoint." # permission
+Non-normative: "Users can manage payments, requests and bill splits in a browser." # summary; each flow has its own UI scenario
+Non-normative: "Server-side and client-side rendering are both permitted." # freedom
+Non-normative: "The UI must expose the `data-testid` attributes listed below for integration testing." # pointer; every listed attribute is checked by UI scenarios
+Non-normative: "Additional elements are permitted, and the visual implementation is the team's choice subject to the product-quality requirements below." # freedom
+Non-normative: "The browser experience must feel like a coherent, presentation-ready consumer finance product, not a test harness with controls attached." # subjective product quality; designer review, not a pass/fail HTTP check
+Non-normative: "Aim for a calm, trustworthy character." # subjective direction
+Non-normative: "Available funds must be the clearest monetary value once holds exist, with total and held funds visibly secondary." # visual hierarchy; judged by design review (presence and values checked in UI scenarios)
+Non-normative: "Payments, requests, splits and authorisations should be easy to scan, and status, direction, privacy and money movement should be understandable without interpreting raw API data." # subjective
+Non-normative: "Use a consistent visual system for typography, spacing, colour, controls and feedback." # subjective
+Non-normative: "Primary actions must be easy to identify." # subjective
+Non-normative: "Available, held, pending, loading, successful, refused and uncertain states must be visually distinct as well as satisfying the behavioural requirements below." # visual distinction is subjective; behaviour is checked
+Non-normative: "Format people, amounts and timestamps for people first; expose technical identifiers only where they help the user." # subjective; exact formats required by testids are checked
+Non-normative: "Inputs need visible labels, keyboard focus must be apparent, and text and controls need sufficient contrast." # accessibility quality; not reliably decidable without false failures
+Non-normative: "Provide considered empty, loading and error states, and keep navigation consistent across the required routes." # subjective; required empty/error elements are checked
+Non-normative: "A custom illustration, brand asset or exact visual match to a reference is not required." # permission
+Non-normative: "The existing API changes as follows:" # connector
+Non-normative: "fields beside it." # fragment of a sentence quoted in full elsewhere
