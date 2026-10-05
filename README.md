@@ -4,7 +4,7 @@ Entry for the WeAreDevelopers × BAND Dark Factory hackathon, track **pocketful*
 and payments app). Every line under `stage-*/` was written by the factory's seats in one
 Band room; the only human input per stage was the task dispatched to the coordinator.
 
-- **Team:** _fill in_
+- **Team:** Revived
 - **Video:** _link_ · **Presentation:** _link_
 
 ## Read this repository
