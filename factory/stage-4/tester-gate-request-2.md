@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Builder has a new stage 4 commit: 30bfb5a4d35f2a0496999bf0f586a797edd32d7b (fixed the maintainability item — a defensive type check in parseBatchItem, no behavior change). Please gate this commit (use a fresh --out suffix, e.g. checks/s4-gate4) and report the result.
