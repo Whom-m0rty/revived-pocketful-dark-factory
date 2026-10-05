@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Stage 3 is closing on commit 1b705b53a69048d91cbb9ed8d40ba24a787e5be4 (gate GREEN round 3). Please copy /Users/whom/dark-factory/band-work/final/holdout/stage-3/ to /Users/whom/dark-factory/band-work/final/result/factory/stage-3/evidence/, commit it, and confirm when done.
