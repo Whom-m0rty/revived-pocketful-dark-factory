@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"sort"
 	"time"
-	"unicode/utf8"
 )
 
 // A ledger view answers "what did the service know at knownAt about balances as they
@@ -113,11 +112,12 @@ type statementEntry struct {
 }
 
 // statementSnapshot is a computed statement, frozen so later pages read the same result.
+// Snapshots are part of the exported state.
 type statementSnapshot struct {
-	userID         string
-	openingBalance int64
-	closingBalance int64
-	entries        []statementEntry
+	UserID         string           `json:"user_id"`
+	OpeningBalance int64            `json:"opening_balance"`
+	ClosingBalance int64            `json:"closing_balance"`
+	Entries        []statementEntry `json:"entries"`
 }
 
 type selectedRevision struct {
@@ -145,7 +145,7 @@ func (s *State) buildStatement(u *User, from *time.Time, to, knownAt time.Time) 
 		return a.payment.ID < b.payment.ID
 	})
 
-	snapshot := &statementSnapshot{userID: u.ID, openingBalance: u.OpeningBalance, entries: []statementEntry{}}
+	snapshot := &statementSnapshot{UserID: u.ID, OpeningBalance: u.OpeningBalance, Entries: []statementEntry{}}
 	balance := u.OpeningBalance
 	for _, sel := range selected {
 		effective := sel.revision.effective
@@ -155,17 +155,17 @@ func (s *State) buildStatement(u *User, from *time.Time, to, knownAt time.Time) 
 		delta := sel.payment.deltaFor(u.ID, sel.revision.Amount)
 		balance += delta
 		if from != nil && effective.Before(*from) {
-			snapshot.openingBalance = balance
+			snapshot.OpeningBalance = balance
 			continue
 		}
 		view := sel.payment.view(s.Currency)
 		view.Amount = sel.revision.Amount
-		snapshot.entries = append(snapshot.entries, statementEntry{
+		snapshot.Entries = append(snapshot.Entries, statementEntry{
 			Payment: view, Delta: delta, BalanceAfter: balance, Revision: sel.revision.Revision,
 			EffectiveAt: sel.revision.EffectiveAt, RecordedAt: sel.revision.RecordedAt,
 		})
 	}
-	snapshot.closingBalance = balance
+	snapshot.ClosingBalance = balance
 	return snapshot
 }
 
@@ -201,14 +201,15 @@ func (srv *Server) statement(w http.ResponseWriter, r *http.Request, st *State, 
 	var snapshot *statementSnapshot
 	if hasSnapshot {
 		snapshotID = token[0]
-		snapshot = st.snapshots[snapshotID]
-		if snapshot == nil || snapshot.userID != user.ID {
+		snapshot = st.Snapshots[snapshotID]
+		if snapshot == nil || snapshot.UserID != user.ID {
 			writeError(w, errNotFound("no such statement snapshot"))
 			return
 		}
 	} else {
 		if !hasTo {
-			to = now
+			// The window is half-open, so end just after now to include payments made at this instant.
+			to = now.Add(time.Millisecond)
 		}
 		if !hasKnownAt {
 			knownAt = now
@@ -223,80 +224,14 @@ func (srv *Server) statement(w http.ResponseWriter, r *http.Request, st *State, 
 		}
 		snapshot = st.buildStatement(user, fromPtr, to, knownAt)
 		snapshotID = newID("stmt_")
-		st.snapshots[snapshotID] = snapshot
+		st.Snapshots[snapshotID] = snapshot
 	}
 
-	page, hasMore := paginate(snapshot.entries, limit, offset)
+	page, hasMore := paginate(snapshot.Entries, limit, offset)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"opening_balance": snapshot.openingBalance, "entries": page,
-		"closing_balance": snapshot.closingBalance, "has_more": hasMore, "snapshot": snapshotID,
+		"opening_balance": snapshot.OpeningBalance, "entries": page,
+		"closing_balance": snapshot.ClosingBalance, "has_more": hasMore, "snapshot": snapshotID,
 	})
-}
-
-// ---------- corrections ----------
-
-// correctionFields validates a correction body; every invalid input is 422.
-func correctionFields(body map[string]any, now time.Time) (expected, amount int64, effectiveText string, effective time.Time, reason string, apiErr *apiError) {
-	expected, ok := integralValue(body["expected_revision"])
-	if !ok || expected < 1 {
-		return 0, 0, "", time.Time{}, "", errValidation("expected_revision must be a positive integer")
-	}
-	amount, ok = integralValue(body["amount"])
-	if !ok || amount < 0 || amount > maxAmount {
-		return 0, 0, "", time.Time{}, "", errValidation("amount must be an integer from 0 to 1000000000")
-	}
-	effectiveText, _ = body["effective_at"].(string)
-	effective, ok = parseInstant(effectiveText)
-	if !ok || effective.After(now) {
-		return 0, 0, "", time.Time{}, "", errValidation("effective_at must be an RFC 3339 instant that is not in the future")
-	}
-	reason, ok = body["reason"].(string)
-	if n := utf8.RuneCountInString(reason); !ok || n < 1 || n > maxNoteLength {
-		return 0, 0, "", time.Time{}, "", errValidation("reason must be 1 to 200 characters")
-	}
-	return expected, amount, effectiveText, effective, reason, nil
-}
-
-func (srv *Server) correctPayment(r *http.Request, st *State, user *User, body map[string]any, now time.Time) (any, *apiError) {
-	payment := st.paymentsByID[r.PathValue("payment_id")]
-	if payment == nil {
-		return nil, errNotFound("no such payment")
-	}
-	if payment.FromUserID != user.ID {
-		return nil, errForbidden("only the sender may correct this payment")
-	}
-	expected, amount, effectiveText, effective, reason, apiErr := correctionFields(body, now)
-	if apiErr != nil {
-		return nil, apiErr
-	}
-	if payment.linked() {
-		return nil, &apiError{422, "linked_payment_immutable", "settlement members and captures cannot be corrected"}
-	}
-	latest := payment.latestRevision()
-	if expected != latest.Revision {
-		return nil, &apiError{409, "stale_revision", "the payment has been corrected since that revision"}
-	}
-
-	sender, receiver := st.usersByID[payment.FromUserID], st.usersByID[payment.ToUserID]
-	change := amount - latest.Amount
-	if (change > 0 && st.available(sender, now) < change) || (change < 0 && st.available(receiver, now) < -change) {
-		return nil, errInsufficientFunds()
-	}
-
-	recorded := now
-	if !recorded.After(latest.recorded) {
-		recorded = latest.recorded.Add(time.Millisecond)
-	}
-	revision := &Revision{Revision: latest.Revision + 1, Amount: amount, EffectiveAt: effectiveText,
-		RecordedAt: formatTime(recorded), Reason: reason, effective: effective, recorded: recorded}
-	payment.Revisions = append(payment.Revisions, revision)
-	if st.overdrawnInHistory(sender, recorded) || st.overdrawnInHistory(receiver, recorded) {
-		payment.Revisions = payment.Revisions[:len(payment.Revisions)-1]
-		return nil, &apiError{409, "historical_overdraft", "the correction would overdraw a wallet in the past"}
-	}
-	sender.Balance -= change
-	receiver.Balance += change
-	return revision.view(payment.ID), nil
 }
 
 // overdrawnInHistory reports whether the user's total or available balance is negative at

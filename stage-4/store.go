@@ -30,6 +30,8 @@ type State struct {
 	Seq              int64                `json:"seq"`
 	// LedgerOpenings is set once every user's OpeningBalance is recorded; earlier exports lack them.
 	LedgerOpenings bool `json:"ledger_openings"`
+	// Snapshots are frozen statements by token; earlier exports lack them.
+	Snapshots map[string]*statementSnapshot `json:"statement_snapshots"`
 
 	usersByID     map[string]*User
 	usersByHandle map[string]*User
@@ -37,7 +39,6 @@ type State struct {
 	requestsByID  map[string]*Request
 	authsByID     map[string]*Authorization
 	paymentsByID  map[string]*Payment
-	snapshots     map[string]*statementSnapshot
 	operators     map[string]bool
 	idempotency   map[string]*IdempotencyRecord
 }
@@ -70,7 +71,9 @@ func (s *State) buildIndexes() error {
 	s.usersByEmail = map[string]*User{}
 	s.requestsByID = map[string]*Request{}
 	s.paymentsByID = map[string]*Payment{}
-	s.snapshots = map[string]*statementSnapshot{}
+	if s.Snapshots == nil {
+		s.Snapshots = map[string]*statementSnapshot{}
+	}
 	s.authsByID = map[string]*Authorization{}
 	s.operators = map[string]bool{}
 	s.idempotency = map[string]*IdempotencyRecord{}
@@ -226,9 +229,9 @@ func (s *State) transfer(from, to *User, amount int64, note, visibility string, 
 	return s.recordPayment(from, to, amount, note, visibility, link, at)
 }
 
-// paymentLink names the request, settlement or authorization a payment belongs to, if any.
+// paymentLink names the request, settlement, authorization or refunded payment a payment belongs to, if any.
 type paymentLink struct {
-	requestID, settlementID, authorizationID *string
+	requestID, settlementID, authorizationID, refundOf *string
 }
 
 // recordPayment appends a payment record without touching balances.
@@ -238,6 +241,7 @@ func (s *State) recordPayment(from, to *User, amount int64, note, visibility str
 		FromUserID: from.ID, FromHandle: from.Handle, ToUserID: to.ID, ToHandle: to.Handle,
 		Amount: amount, Note: note, Visibility: visibility,
 		RequestID: link.requestID, SettlementID: link.settlementID, AuthorizationID: link.authorizationID,
+		RefundOf:  link.refundOf,
 		CreatedAt: formatTime(at), created: at,
 	}
 	original := &Revision{Revision: 1, Amount: amount, EffectiveAt: p.CreatedAt, RecordedAt: p.CreatedAt, effective: at, recorded: at}

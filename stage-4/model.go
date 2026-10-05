@@ -54,6 +54,7 @@ type Payment struct {
 	RequestID       *string `json:"request_id"`
 	SettlementID    *string `json:"settlement_id"`
 	AuthorizationID *string `json:"authorization_id"`
+	RefundOf        *string `json:"refund_of"`
 	CreatedAt       string  `json:"created_at"`
 	// Revisions is the payment's amount history; revision 1 is the original payment.
 	Revisions []*Revision `json:"revisions"`
@@ -68,23 +69,26 @@ type Revision struct {
 	EffectiveAt string `json:"effective_at"`
 	RecordedAt  string `json:"recorded_at"`
 	Reason      string `json:"reason"`
+	// CorrectionBatchID names the operator batch that recorded this revision, if any.
+	CorrectionBatchID *string `json:"correction_batch_id"`
 
 	effective time.Time
 	recorded  time.Time
 }
 
 type revisionView struct {
-	PaymentID   string `json:"payment_id"`
-	Revision    int64  `json:"revision"`
-	Amount      int64  `json:"amount"`
-	EffectiveAt string `json:"effective_at"`
-	RecordedAt  string `json:"recorded_at"`
-	Reason      string `json:"reason"`
+	PaymentID         string  `json:"payment_id"`
+	Revision          int64   `json:"revision"`
+	Amount            int64   `json:"amount"`
+	EffectiveAt       string  `json:"effective_at"`
+	RecordedAt        string  `json:"recorded_at"`
+	Reason            string  `json:"reason"`
+	CorrectionBatchID *string `json:"correction_batch_id"`
 }
 
 func (r *Revision) view(paymentID string) revisionView {
 	return revisionView{PaymentID: paymentID, Revision: r.Revision, Amount: r.Amount,
-		EffectiveAt: r.EffectiveAt, RecordedAt: r.RecordedAt, Reason: r.Reason}
+		EffectiveAt: r.EffectiveAt, RecordedAt: r.RecordedAt, Reason: r.Reason, CorrectionBatchID: r.CorrectionBatchID}
 }
 
 func (r *Revision) parseTimes() bool {
@@ -108,9 +112,9 @@ func (p *Payment) revisionKnownAt(knownAt time.Time) *Revision {
 	return nil
 }
 
-// linked reports whether the payment belongs to a settlement or capture and so cannot be corrected.
-func (p *Payment) linked() bool {
-	return p.SettlementID != nil || p.AuthorizationID != nil
+// immutable reports whether no correction may ever change the payment: captures and refunds.
+func (p *Payment) immutable() bool {
+	return p.AuthorizationID != nil || p.RefundOf != nil
 }
 
 // deltaFor is the signed effect of amount on the user's balance.
@@ -169,6 +173,7 @@ type paymentView struct {
 	RequestID       *string `json:"request_id"`
 	SettlementID    *string `json:"settlement_id"`
 	AuthorizationID *string `json:"authorization_id"`
+	RefundOf        *string `json:"refund_of"`
 	CreatedAt       string  `json:"created_at"`
 }
 
@@ -191,7 +196,8 @@ func (p *Payment) view(currency string) paymentView {
 		PaymentID: p.ID, FromUserID: p.FromUserID, FromHandle: p.FromHandle,
 		ToUserID: p.ToUserID, ToHandle: p.ToHandle, Amount: p.Amount, Currency: currency,
 		Note: p.Note, Visibility: p.Visibility, RequestID: p.RequestID,
-		SettlementID: p.SettlementID, AuthorizationID: p.AuthorizationID, CreatedAt: p.CreatedAt,
+		SettlementID: p.SettlementID, AuthorizationID: p.AuthorizationID,
+		RefundOf: p.RefundOf, CreatedAt: p.CreatedAt,
 	}
 }
 

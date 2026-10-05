@@ -42,6 +42,8 @@ func NewServer() *Server {
 	srv.mux.HandleFunc("GET /statement", srv.authenticated(srv.statement))
 	srv.mux.HandleFunc("GET /payments/{payment_id}/revisions", srv.authenticated(srv.paymentRevisions))
 	srv.mux.HandleFunc("POST /payments/{payment_id}/corrections", srv.idempotent(srv.correctPayment, idempotentOptions{}))
+	srv.mux.HandleFunc("POST /payments/{payment_id}/refunds", srv.idempotent(srv.refundPayment, idempotentOptions{}))
+	srv.mux.HandleFunc("POST /correction-batches", srv.idempotent(srv.createCorrectionBatch, idempotentOptions{operatorOnly: true}))
 	srv.mux.HandleFunc("POST /settlements", srv.idempotent(srv.createSettlement, idempotentOptions{operatorOnly: true}))
 	return srv
 }
