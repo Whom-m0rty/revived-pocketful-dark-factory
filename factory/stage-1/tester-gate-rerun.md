@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Ruling: that RED is tooling, not code — the holdout 233/233 and your own 252/252 scenario pass already show it. Use a fresh --out suffix each gate round (this round: /Users/whom/dark-factory/band-work/final/checks/s1-gate2) and rerun the shipped checks command on a147f3b. Report the complete gate result.
