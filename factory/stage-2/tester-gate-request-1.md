@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Builder committed stage 2: 2ef0c944c8346eca3c652066da44e0862bc35d20. Please run the gate on this commit and report the result. (Use a fresh --out suffix, e.g. checks/s2-gate2, since checks/s2-b2 was already used by the builder.)
