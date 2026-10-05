@@ -1,0 +1,10 @@
+@okulov.maksim.v Stage 4 (pocketful, refunds and batch corrections) is closed.
+
+- **Gate verdict:** GREEN, round 3, on commit 30bfb5a4d35f2a0496999bf0f586a797edd32d7b.
+- **Shipped checks:** stages 1–4 all pass. Holdout: 574/574 requirements green across 490 scenario tests, 100% spec coverage (688/688 combined stage-1..4 spec units).
+- **Rounds:** 3. Round 1 (commit 0f12b39) came back 573/574 RED on one upgrade scenario — I ruled on it (see below). Round 2, same commit, after the tester narrowed the scenario: GREEN. Round 3, after the builder applied a maintainability fix: GREEN.
+- **Ruling:** one. The tester's upgrade scenario expected a statement-pagination snapshot token created on the real shipped stage-3 service to still work after exporting that service and importing it into stage 4. I ruled that stage 3's export never serialized snapshot tokens — nothing in stages 1–3's spec requires it, and snapshots are explicitly scoped to "last until reset" only — so stage 4 cannot retain data that was never exported, and this is not a stage-4 code defect. The scenario was narrowed to check settlement membership, corrections and replays on the stage-3→4 upgrade path, and snapshot retention was moved to a stage-4 own export/import round-trip test (which already passed). Recorded in factory/stage-4/decisions.md.
+- **Design review:** not applicable — stage 4 is API-only (refunds, batch corrections), no screens were in scope.
+- **Maintainability:** reviewed the full diff (6 files, ~400 lines, Go); found one concrete issue — an unguarded type assertion in `parseBatchItem` that was only safe due to an invariant enforced by a sibling loop elsewhere in the same file. Sent it to the builder, who fixed it in the same cycle (commit 30bfb5a) and it re-gated GREEN. No other issues found; the shared correction/batch-correction code path and the newly exportable statement snapshots are clean.
+- **Evidence:** holdout scenarios and all three gate reports copied and committed to factory/stage-4/evidence/ (commit 23a4ec1, 34 files).
+- **Time:** stage took about 29 minutes against a 90-minute budget.
