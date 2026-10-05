@@ -5,15 +5,6 @@ import (
 	"time"
 )
 
-func (srv *Server) me(w http.ResponseWriter, r *http.Request, st *State, user *User) {
-	held := st.heldBy(user.ID, time.Now())
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id": user.ID, "display_name": user.DisplayName, "handle": user.Handle,
-		"balance": user.Balance, "total": user.Balance, "available": user.Balance - held, "held": held,
-		"currency": st.Currency, "minor_units": st.MinorUnits,
-	})
-}
-
 // lookupHandle validates a handle field value and resolves it to a user.
 func (st *State) lookupHandle(field, handle string) (*User, *apiError) {
 	if apiErr := handleValue(field, handle); apiErr != nil {
@@ -183,8 +174,7 @@ func (srv *Server) activity(w http.ResponseWriter, r *http.Request, st *State, u
 		return
 	}
 	visible := []paymentView{}
-	for i := len(st.Payments) - 1; i >= 0; i-- {
-		p := st.Payments[i]
+	for _, p := range st.paymentsNewestFirst() {
 		if p.Visibility == "public" || p.FromUserID == user.ID || p.ToUserID == user.ID {
 			visible = append(visible, p.view(st.Currency))
 		}

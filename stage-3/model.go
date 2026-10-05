@@ -36,6 +36,8 @@ type User struct {
 	DisplayName  string `json:"display_name"`
 	Handle       string `json:"handle"`
 	Balance      int64  `json:"balance"`
+	// OpeningBalance is what the wallet held before any recorded payment.
+	OpeningBalance int64 `json:"opening_balance"`
 }
 
 // Payment is one completed money movement between two wallets.
@@ -53,6 +55,73 @@ type Payment struct {
 	SettlementID    *string `json:"settlement_id"`
 	AuthorizationID *string `json:"authorization_id"`
 	CreatedAt       string  `json:"created_at"`
+	// Revisions is the payment's amount history; revision 1 is the original payment.
+	Revisions []*Revision `json:"revisions"`
+
+	created time.Time
+}
+
+// Revision is one immutable entry in a payment's amount history.
+type Revision struct {
+	Revision    int64  `json:"revision"`
+	Amount      int64  `json:"amount"`
+	EffectiveAt string `json:"effective_at"`
+	RecordedAt  string `json:"recorded_at"`
+	Reason      string `json:"reason"`
+
+	effective time.Time
+	recorded  time.Time
+}
+
+type revisionView struct {
+	PaymentID   string `json:"payment_id"`
+	Revision    int64  `json:"revision"`
+	Amount      int64  `json:"amount"`
+	EffectiveAt string `json:"effective_at"`
+	RecordedAt  string `json:"recorded_at"`
+	Reason      string `json:"reason"`
+}
+
+func (r *Revision) view(paymentID string) revisionView {
+	return revisionView{PaymentID: paymentID, Revision: r.Revision, Amount: r.Amount,
+		EffectiveAt: r.EffectiveAt, RecordedAt: r.RecordedAt, Reason: r.Reason}
+}
+
+func (r *Revision) parseTimes() bool {
+	var ok1, ok2 bool
+	r.effective, ok1 = parseInstant(r.EffectiveAt)
+	r.recorded, ok2 = parseInstant(r.RecordedAt)
+	return ok1 && ok2
+}
+
+func (p *Payment) latestRevision() *Revision {
+	return p.Revisions[len(p.Revisions)-1]
+}
+
+// revisionKnownAt is the latest revision recorded at or before knownAt, or nil.
+func (p *Payment) revisionKnownAt(knownAt time.Time) *Revision {
+	for i := len(p.Revisions) - 1; i >= 0; i-- {
+		if !p.Revisions[i].recorded.After(knownAt) {
+			return p.Revisions[i]
+		}
+	}
+	return nil
+}
+
+// linked reports whether the payment belongs to a settlement or capture and so cannot be corrected.
+func (p *Payment) linked() bool {
+	return p.SettlementID != nil || p.AuthorizationID != nil
+}
+
+// deltaFor is the signed effect of amount on the user's balance.
+func (p *Payment) deltaFor(userID string, amount int64) int64 {
+	switch userID {
+	case p.FromUserID:
+		return -amount
+	case p.ToUserID:
+		return amount
+	}
+	return 0
 }
 
 // Request asks the payer to send money to the requester.
@@ -146,13 +215,21 @@ func newToken() string {
 	return hex.EncodeToString(b)
 }
 
+// formatTime renders an instant with millisecond precision. Instants are truncated to
+// milliseconds before use (see currentTime), so the rendered value is the exact instant.
 func formatTime(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05-07:00")
+	return t.UTC().Format("2006-01-02T15:04:05.000-07:00")
 }
 
-// formatPreciseTime keeps milliseconds, for deadlines that may be only seconds away.
-func formatPreciseTime(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.000-07:00")
+// currentTime is now, at the precision timestamps are stored and rendered with.
+func currentTime() time.Time {
+	return time.Now().Truncate(time.Millisecond)
+}
+
+// parseInstant accepts only an RFC 3339 date-time with an explicit offset.
+func parseInstant(s string) (time.Time, bool) {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	return t, err == nil
 }
 
 func validAuthorizationStatus(s string) bool {
@@ -180,8 +257,12 @@ type Authorization struct {
 	ExpiresAt      string   `json:"expires_at"`
 	PaymentIDs     []string `json:"payment_ids"`
 	CreatedAt      string   `json:"created_at"`
+	// ClosedAt is when a final capture or void closed the hold; clock expiry is derived.
+	ClosedAt string `json:"closed_at"`
 
+	created time.Time
 	expires time.Time
+	closed  *time.Time
 }
 
 func (a *Authorization) expiredAt(now time.Time) bool {
@@ -221,6 +302,18 @@ type authorizationView struct {
 	PaymentID       *string  `json:"payment_id"`
 	PaymentIDs      []string `json:"payment_ids"`
 	CreatedAt       string   `json:"created_at"`
+	ClosedAt        *string  `json:"closed_at"`
+}
+
+// closedAtText is when the hold closed as seen at now: its close event, or its deadline once expired.
+func (a *Authorization) closedAtText(now time.Time) *string {
+	switch {
+	case a.Status != authOpen:
+		return &a.ClosedAt
+	case a.expiredAt(now):
+		return &a.ExpiresAt
+	}
+	return nil
 }
 
 func (a *Authorization) view(currency string, now time.Time) authorizationView {
@@ -237,6 +330,6 @@ func (a *Authorization) view(currency string, now time.Time) authorizationView {
 		ToUserID: a.ToUserID, ToHandle: a.ToHandle, Amount: a.Amount,
 		CapturedAmount: a.CapturedAmount, RemainingAmount: a.heldAt(now), Currency: currency,
 		Note: a.Note, Visibility: a.Visibility, Status: a.statusAt(now), ExpiresAt: a.ExpiresAt,
-		PaymentID: latest, PaymentIDs: paymentIDs, CreatedAt: a.CreatedAt,
+		PaymentID: latest, PaymentIDs: paymentIDs, CreatedAt: a.CreatedAt, ClosedAt: a.closedAtText(now),
 	}
 }

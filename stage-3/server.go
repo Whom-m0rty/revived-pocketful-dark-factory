@@ -39,6 +39,9 @@ func NewServer() *Server {
 	srv.mux.HandleFunc("POST /authorizations", srv.idempotent(srv.createAuthorization, idempotentOptions{}))
 	srv.mux.HandleFunc("POST /authorizations/{id}/capture", srv.idempotent(srv.captureAuthorization, idempotentOptions{allowEmptyBody: true}))
 	srv.mux.HandleFunc("POST /authorizations/{id}/void", srv.authenticated(srv.voidAuthorization))
+	srv.mux.HandleFunc("GET /statement", srv.authenticated(srv.statement))
+	srv.mux.HandleFunc("GET /payments/{payment_id}/revisions", srv.authenticated(srv.paymentRevisions))
+	srv.mux.HandleFunc("POST /payments/{payment_id}/corrections", srv.idempotent(srv.correctPayment, idempotentOptions{}))
 	srv.mux.HandleFunc("POST /settlements", srv.idempotent(srv.createSettlement, idempotentOptions{operatorOnly: true}))
 	return srv
 }
@@ -150,7 +153,7 @@ func (srv *Server) idempotent(op writeOperation, opts idempotentOptions) http.Ha
 			return
 		}
 
-		result, apiErr := op(r, st, user, body, time.Now())
+		result, apiErr := op(r, st, user, body, currentTime())
 		if apiErr != nil {
 			writeError(w, apiErr)
 			return

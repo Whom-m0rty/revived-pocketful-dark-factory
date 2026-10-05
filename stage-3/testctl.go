@@ -37,6 +37,7 @@ type fixturePayment struct {
 	Amount     json.Number `json:"amount"`
 	Note       string      `json:"note"`
 	Visibility *string     `json:"visibility"`
+	CreatedAt  *string     `json:"created_at"`
 }
 
 type fixtureRequest struct {
@@ -57,10 +58,23 @@ type fixtureAuthorization struct {
 	Visibility *string     `json:"visibility"`
 	Status     string      `json:"status"`
 	ExpiresAt  string      `json:"expires_at"`
+	CreatedAt  *string     `json:"created_at"`
+}
+
+// seededTime is a fixture's optional created_at: reset time when omitted, never in the future.
+func seededTime(value *string, resetAt time.Time) (string, *apiError) {
+	if value == nil {
+		return formatTime(resetAt), nil
+	}
+	t, ok := parseInstant(*value)
+	if !ok || t.After(resetAt) {
+		return "", errValidation("created_at must be an RFC 3339 instant that is not in the future")
+	}
+	return *value, nil
 }
 
 // stateFromFixture builds a fresh state. Seeded balances are taken as already net
-// of seeded payments; seeded items get past timestamps in fixture order.
+// of seeded payments; seeded items without created_at are stamped with reset time.
 func stateFromFixture(f *fixture) (*State, *apiError) {
 	if f.Currency == nil || f.Users == nil {
 		return nil, errValidation("currency, minor_units and users are required")
@@ -91,25 +105,26 @@ func stateFromFixture(f *fixture) (*State, *apiError) {
 			DisplayName: u.DisplayName, Handle: u.Handle, Balance: balance})
 	}
 
-	seededAt := time.Now().Add(-time.Hour)
+	resetAt := currentTime()
 	for _, p := range f.Payments {
 		amount, ok := integralValue(p.Amount)
 		if !ok {
 			return nil, errValidation("payment amounts must be integers")
 		}
-		visibility := defaultVisibility(p.Visibility)
-		seq := st.nextSeq()
-		st.Payments = append(st.Payments, &Payment{ID: p.ID, Seq: seq, FromUserID: p.FromUserID, ToUserID: p.ToUserID,
-			Amount: amount, Note: p.Note, Visibility: visibility, CreatedAt: formatTime(seededAt.Add(time.Duration(seq) * time.Second))})
+		createdAt, apiErr := seededTime(p.CreatedAt, resetAt)
+		if apiErr != nil {
+			return nil, apiErr
+		}
+		st.Payments = append(st.Payments, &Payment{ID: p.ID, Seq: st.nextSeq(), FromUserID: p.FromUserID, ToUserID: p.ToUserID,
+			Amount: amount, Note: p.Note, Visibility: defaultVisibility(p.Visibility), CreatedAt: createdAt})
 	}
 	for _, rq := range f.Requests {
 		amount, ok := integralValue(rq.Amount)
 		if !ok {
 			return nil, errValidation("request amounts must be integers")
 		}
-		seq := st.nextSeq()
-		st.Requests = append(st.Requests, &Request{ID: rq.ID, Seq: seq, RequesterID: rq.RequesterID, PayerID: rq.PayerID,
-			Amount: amount, Note: rq.Note, Status: rq.Status, CreatedAt: formatTime(seededAt.Add(time.Duration(seq) * time.Second))})
+		st.Requests = append(st.Requests, &Request{ID: rq.ID, Seq: st.nextSeq(), RequesterID: rq.RequesterID, PayerID: rq.PayerID,
+			Amount: amount, Note: rq.Note, Status: rq.Status, CreatedAt: formatTime(resetAt)})
 	}
 
 	st.AuthorizationTTL = defaultAuthorizationTTL
@@ -125,10 +140,13 @@ func stateFromFixture(f *fixture) (*State, *apiError) {
 		if !ok {
 			return nil, errValidation("authorization amounts must be integers")
 		}
-		seq := st.nextSeq()
-		st.Authorizations = append(st.Authorizations, &Authorization{ID: a.ID, Seq: seq, FromUserID: a.FromUserID, ToUserID: a.ToUserID,
+		createdAt, apiErr := seededTime(a.CreatedAt, resetAt)
+		if apiErr != nil {
+			return nil, apiErr
+		}
+		st.Authorizations = append(st.Authorizations, &Authorization{ID: a.ID, Seq: st.nextSeq(), FromUserID: a.FromUserID, ToUserID: a.ToUserID,
 			Amount: amount, Note: a.Note, Visibility: defaultVisibility(a.Visibility), Status: a.Status, ExpiresAt: a.ExpiresAt,
-			PaymentIDs: []string{}, CreatedAt: formatTime(seededAt.Add(time.Duration(seq) * time.Second))})
+			PaymentIDs: []string{}, CreatedAt: createdAt})
 	}
 
 	if err := st.buildIndexes(); err != nil {

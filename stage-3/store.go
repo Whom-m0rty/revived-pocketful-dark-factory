@@ -28,13 +28,16 @@ type State struct {
 	Operators        []string             `json:"settlement_operator_ids"`
 	Idempotency      []*IdempotencyRecord `json:"idempotency"`
 	Seq              int64                `json:"seq"`
+	// LedgerOpenings is set once every user's OpeningBalance is recorded; earlier exports lack them.
+	LedgerOpenings bool `json:"ledger_openings"`
 
 	usersByID     map[string]*User
 	usersByHandle map[string]*User
 	usersByEmail  map[string]*User
 	requestsByID  map[string]*Request
 	authsByID     map[string]*Authorization
-	paymentIDs    map[string]bool
+	paymentsByID  map[string]*Payment
+	snapshots     map[string]*statementSnapshot
 	operators     map[string]bool
 	idempotency   map[string]*IdempotencyRecord
 }
@@ -66,7 +69,8 @@ func (s *State) buildIndexes() error {
 	s.usersByHandle = map[string]*User{}
 	s.usersByEmail = map[string]*User{}
 	s.requestsByID = map[string]*Request{}
-	s.paymentIDs = map[string]bool{}
+	s.paymentsByID = map[string]*Payment{}
+	s.snapshots = map[string]*statementSnapshot{}
 	s.authsByID = map[string]*Authorization{}
 	s.operators = map[string]bool{}
 	s.idempotency = map[string]*IdempotencyRecord{}
@@ -94,7 +98,7 @@ func (s *State) buildIndexes() error {
 		}
 	}
 	for _, p := range s.Payments {
-		if p == nil || p.ID == "" || len(p.ID) > maxIDLength || s.paymentIDs[p.ID] {
+		if p == nil || p.ID == "" || len(p.ID) > maxIDLength || s.paymentsByID[p.ID] != nil {
 			return errors.New("invalid payment id")
 		}
 		if s.usersByID[p.FromUserID] == nil || s.usersByID[p.ToUserID] == nil {
@@ -103,7 +107,13 @@ func (s *State) buildIndexes() error {
 		if p.Visibility != "public" && p.Visibility != "private" {
 			return errors.New("invalid visibility")
 		}
-		s.paymentIDs[p.ID] = true
+		if err := p.prepareHistory(); err != nil {
+			return err
+		}
+		s.paymentsByID[p.ID] = p
+	}
+	if !s.LedgerOpenings {
+		s.deriveOpeningBalances()
 	}
 	for _, r := range s.Requests {
 		if r == nil || r.ID == "" || len(r.ID) > maxIDLength || s.requestsByID[r.ID] != nil {
@@ -133,14 +143,12 @@ func (s *State) buildIndexes() error {
 		if !validAuthorizationStatus(a.Status) || a.Amount < 1 || a.CapturedAmount < 0 || a.CapturedAmount > a.Amount {
 			return errors.New("invalid authorization amounts or status")
 		}
-		expires, err := time.Parse(time.RFC3339, a.ExpiresAt)
-		if err != nil {
-			return errors.New("invalid authorization expires_at")
+		if err := s.prepareAuthorizationTimes(a); err != nil {
+			return err
 		}
-		a.expires = expires
 		s.authsByID[a.ID] = a
 	}
-	now := time.Now()
+	now := currentTime()
 	for _, u := range s.Users {
 		if s.heldBy(u.ID, now) > u.Balance {
 			return errors.New("open holds exceed the balance of " + u.ID)
@@ -195,7 +203,7 @@ func (s *State) issueToken(userID string) string {
 func (s *State) newPaymentID() string {
 	for {
 		id := newID("pay_")
-		if !s.paymentIDs[id] {
+		if s.paymentsByID[id] == nil {
 			return id
 		}
 	}
@@ -230,10 +238,12 @@ func (s *State) recordPayment(from, to *User, amount int64, note, visibility str
 		FromUserID: from.ID, FromHandle: from.Handle, ToUserID: to.ID, ToHandle: to.Handle,
 		Amount: amount, Note: note, Visibility: visibility,
 		RequestID: link.requestID, SettlementID: link.settlementID, AuthorizationID: link.authorizationID,
-		CreatedAt: formatTime(at),
+		CreatedAt: formatTime(at), created: at,
 	}
+	original := &Revision{Revision: 1, Amount: amount, EffectiveAt: p.CreatedAt, RecordedAt: p.CreatedAt, effective: at, recorded: at}
+	p.Revisions = []*Revision{original}
 	s.Payments = append(s.Payments, p)
-	s.paymentIDs[p.ID] = true
+	s.paymentsByID[p.ID] = p
 	return p
 }
 
@@ -247,15 +257,13 @@ func (s *State) newAuthorizationID() string {
 }
 
 func (s *State) createAuthorization(from, to *User, amount int64, note, visibility string, at time.Time) *Authorization {
-	// Millisecond precision, so the deadline read back from expires_at is the one enforced.
-	at = at.Truncate(time.Millisecond)
 	expires := at.Add(time.Duration(s.AuthorizationTTL) * time.Second)
 	a := &Authorization{
 		ID: s.newAuthorizationID(), Seq: s.nextSeq(),
 		FromUserID: from.ID, FromHandle: from.Handle, ToUserID: to.ID, ToHandle: to.Handle,
 		Amount: amount, Note: note, Visibility: visibility, Status: authOpen,
-		ExpiresAt: formatPreciseTime(expires), PaymentIDs: []string{}, CreatedAt: formatPreciseTime(at),
-		expires: expires,
+		ExpiresAt: formatTime(expires), PaymentIDs: []string{}, CreatedAt: formatTime(at),
+		created: at, expires: expires,
 	}
 	s.Authorizations = append(s.Authorizations, a)
 	s.authsByID[a.ID] = a
@@ -277,4 +285,77 @@ func (s *State) createRequest(requester, payer *User, amount int64, note string,
 func (s *State) remember(rec *IdempotencyRecord) {
 	s.Idempotency = append(s.Idempotency, rec)
 	s.idempotency[rec.scope()] = rec
+}
+
+// prepareHistory parses the payment's times, creating revision 1 for payments
+// exported before revision histories existed.
+func (p *Payment) prepareHistory() error {
+	created, ok := parseInstant(p.CreatedAt)
+	if !ok {
+		return errors.New("invalid payment created_at")
+	}
+	p.created = created
+	if len(p.Revisions) == 0 {
+		p.Revisions = []*Revision{{Revision: 1, Amount: p.Amount, EffectiveAt: p.CreatedAt, RecordedAt: p.CreatedAt}}
+	}
+	for i, r := range p.Revisions {
+		if r == nil || r.Revision != int64(i+1) || !r.parseTimes() {
+			return errors.New("invalid payment revision history")
+		}
+	}
+	return nil
+}
+
+// deriveOpeningBalances sets each user's opening balance from the current balance and
+// the original amounts of their payments, for states that predate opening balances.
+func (s *State) deriveOpeningBalances() {
+	for _, u := range s.Users {
+		u.OpeningBalance = u.Balance
+	}
+	for _, p := range s.Payments {
+		s.usersByID[p.FromUserID].OpeningBalance += p.latestRevision().Amount
+		s.usersByID[p.ToUserID].OpeningBalance -= p.latestRevision().Amount
+	}
+	s.LedgerOpenings = true
+}
+
+// prepareAuthorizationTimes parses an authorization's lifecycle times. Holds exported before
+// closed_at existed close at their last capture, or at creation when there was none.
+func (s *State) prepareAuthorizationTimes(a *Authorization) error {
+	var ok bool
+	if a.expires, ok = parseInstant(a.ExpiresAt); !ok {
+		return errors.New("invalid authorization expires_at")
+	}
+	if a.created, ok = parseInstant(a.CreatedAt); !ok {
+		return errors.New("invalid authorization created_at")
+	}
+	for _, id := range a.PaymentIDs {
+		if s.paymentsByID[id] == nil {
+			return errors.New("authorization references unknown payment")
+		}
+	}
+	a.closed = nil
+	if a.Status == authOpen {
+		a.ClosedAt = ""
+		return nil
+	}
+	if a.ClosedAt == "" {
+		a.ClosedAt = a.CreatedAt
+		if n := len(a.PaymentIDs); n > 0 {
+			a.ClosedAt = s.paymentsByID[a.PaymentIDs[n-1]].CreatedAt
+		}
+	}
+	closed, ok := parseInstant(a.ClosedAt)
+	if !ok {
+		return errors.New("invalid authorization closed_at")
+	}
+	a.closed = &closed
+	return nil
+}
+
+// close records a final capture or void at the given instant.
+func (a *Authorization) close(status string, at time.Time) {
+	a.Status = status
+	a.ClosedAt = formatTime(at)
+	a.closed = &at
 }

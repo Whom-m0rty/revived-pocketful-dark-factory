@@ -92,13 +92,13 @@ func (srv *Server) captureAuthorization(r *http.Request, st *State, user *User, 
 	auth.CapturedAmount += amount
 	auth.PaymentIDs = append(auth.PaymentIDs, payment.ID)
 	if final || auth.CapturedAmount == auth.Amount {
-		auth.Status = authCaptured
+		auth.close(authCaptured, now)
 	}
 	return payment.view(st.Currency), nil
 }
 
 func (srv *Server) voidAuthorization(w http.ResponseWriter, r *http.Request, st *State, user *User) {
-	now := time.Now()
+	now := currentTime()
 	auth := st.authsByID[r.PathValue("id")]
 	if auth == nil {
 		writeError(w, errNotFound("no such authorization"))
@@ -110,7 +110,7 @@ func (srv *Server) voidAuthorization(w http.ResponseWriter, r *http.Request, st 
 	}
 	switch auth.statusAt(now) {
 	case authOpen:
-		auth.Status = authVoided
+		auth.close(authVoided, now)
 	case authVoided:
 	default:
 		writeError(w, errAuthorizationNotOpen())
@@ -130,10 +130,9 @@ func (srv *Server) listAuthorizations(w http.ResponseWriter, r *http.Request, st
 		writeError(w, apiErr)
 		return
 	}
-	now := time.Now()
+	now := currentTime()
 	matches := []authorizationView{}
-	for i := len(st.Authorizations) - 1; i >= 0; i-- {
-		auth := st.Authorizations[i]
+	for _, auth := range st.authorizationsNewestFirst() {
 		if filter.matches(auth.ToUserID == user.ID, auth.FromUserID == user.ID, auth.statusAt(now)) {
 			matches = append(matches, auth.view(st.Currency, now))
 		}
