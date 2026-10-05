@@ -181,3 +181,20 @@ statement sorts entries with the same timestamp by payment id, not by creation o
 the isolated network two payments can land in the same millisecond. Our seats ran the shipped
 checks in host mode, where requests are slower and the tie never happens. Lesson for the
 factory: give the seats the shipped-check command in `--mode isolated`, the way it is judged.
+
+## Same mandates, the other track (not the judged run)
+
+To check the factory is generic, after the submitted run we pointed the same four mandates —
+byte-identical, `diff -r` clean — at the other track, `tablekeeper` (restaurant reservations),
+stage 1 only, in a separate room and a separate repository. Nothing in the mandates or tools
+was changed; only the task (track and spec) differed.
+
+| | tablekeeper stage 1 |
+|---|---|
+| Dispatched → closed (UTC, 5 Oct) | 21:27 → 21:55, 28 min |
+| Shipped checks, host mode | 120/120 (on the builder's first commit) |
+| Shipped checks, isolated mode | 120/120 |
+| Rulings | 2 (the coordinator settled two spec ambiguities from quotes before the build) |
+| Commits | coordinator 1, tester 2, builder 1 |
+
+This run is evidence of generality only; it is not part of this submission's stages.
