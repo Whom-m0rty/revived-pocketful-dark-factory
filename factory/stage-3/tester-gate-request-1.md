@@ -1,0 +1,1 @@
+@okulov.maksim.v/tester Builder committed stage 3: 1b705b53a69048d91cbb9ed8d40ba24a787e5be4. Please run the gate on this commit and report the result. (Use a fresh --out suffix, e.g. checks/s3-gate2, since checks/s3-b1 was already used by the builder.)
