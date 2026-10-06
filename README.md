@@ -5,7 +5,7 @@ and payments app). Every line under `stage-*/` was written by the factory's seat
 Band room; the only human input per stage was the task dispatched to the coordinator.
 
 - **Team:** Revived
-- **Video:** _link_ · **Presentation:** _link_
+- **Video:** https://youtu.be/fqNM3OsWL1g · **Presentation:** [`docs/presentation.pdf`](docs/presentation.pdf) · **Demo data from the video:** [`docs/seed_demo.sh`](docs/seed_demo.sh)
 
 ## Read this repository
 
